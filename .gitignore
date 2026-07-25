@@ -5,11 +5,16 @@ settings.json
 .env
 
 # ─── Private vault data ───────────────────────────────────────
-# Your real workshop/client notes stay local. The committed demo
-# lives in demo-vault/ instead. Delete these lines if you WANT to
-# version your own vault in this repo.
-/conversations/
-/sessions/
+# Your real workshop/client notes stay local. The committed
+# fictional Harborlight demo sessions are whitelisted below so a
+# fresh clone works out of the box; anything else you add to the
+# vault stays private.
+/conversations/*
+!/conversations/harborlight-service-access-2026/
+!/conversations/harborlight-volunteer-readiness-2026/
+/sessions/*
+!/sessions/harborlight-service-access-2026/
+!/sessions/harborlight-volunteer-readiness-2026/
 /transcripts/
 /INDEX.md
 
