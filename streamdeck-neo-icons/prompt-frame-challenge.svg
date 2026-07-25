@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="prompt-frame-challenge">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#B0306B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M44 56 L44 44 L56 44"/><path d="M88 44 L100 44 L100 56"/>
+    <path d="M100 76 L100 88 L88 88"/><path d="M56 88 L44 88 L44 76"/>
+  </g>
+  <circle cx="72" cy="66" r="9" fill="#FFFFFF"/>
+  <text x="72" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="800" letter-spacing="1" fill="#EAF1FB">FRAME</text>
+</svg>

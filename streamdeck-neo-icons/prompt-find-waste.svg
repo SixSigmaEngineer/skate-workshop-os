@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="prompt-find-waste">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#B85C00"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 46 L56 92 Q56 94 58 94 L86 94 Q88 94 88 92 L92 46"/>
+    <line x1="44" y1="46" x2="100" y2="46"/>
+    <path d="M62 46 L62 38 L82 38 L82 46"/>
+    <line x1="64" y1="56" x2="65" y2="84"/><line x1="72" y1="56" x2="72" y2="84"/><line x1="80" y1="56" x2="79" y2="84"/>
+  </g>
+  <text x="72" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="800" letter-spacing="1" fill="#EAF1FB">WASTE</text>
+</svg>

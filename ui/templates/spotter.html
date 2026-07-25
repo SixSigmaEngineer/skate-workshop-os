@@ -1,0 +1,521 @@
+{% extends "base.html" %}
+{% block title %}Spotter{% endblock %}
+{% block content %}
+<section class="pagehead spotter-head">
+  <div>
+    <p class="eyebrow">{{ spotter_subtitle }}</p>
+    <h1>{{ spotter_name }}</h1>
+    <p class="spotter-about"><a href="https://www.surfertoday.com/skateboarding/the-underrated-role-of-the-skate-spotter" target="_blank" rel="noopener noreferrer">What is a spotter?</a></p>
+  </div>
+  <div class="toolbar">
+    <button class="button" id="exportMdBtn" type="button" disabled><img class="button-icon" src="/static/icons/export.svg" alt="">Export MD</button>
+  </div>
+</section>
+
+<section class="spotter-console">
+  <div class="spotter-session-bar panel">
+    <label>Session memory
+      <input id="sessionSearch" list="sessionOptions" value="{{ current_session_label }}" placeholder="Search sessions or leave blank">
+      <input id="sessionKey" type="hidden" value="{{ current_session }}">
+      <datalist id="sessionOptions">
+        {% for row in session_rows %}
+          <option value="{{ row.label }}" data-key="{{ row.key }}">{{ row.count }} memory objects</option>
+        {% endfor %}
+      </datalist>
+    </label>
+    <p class="muted" id="sessionHint">Spotter starts fresh each time. Select a session when you want its captured notes in memory.</p>
+  </div>
+
+  <div class="spotter-chat panel">
+    <div class="chat-statusbar">
+      <img id="spotterDeck" src="/static/spotter-idle.png" alt="Spotter" title="Spotter — idle. Rolls while thinking." style="height:38px;width:auto;border-radius:8px;border:1px solid #e2e8f0;flex:0 0 auto;">
+      <span class="listen-state" id="listenState">Mic off</span>
+      <span class="muted" id="statusLine"></span>
+      <span id="voiceState" title="Voice status" style="font-size:12px;"></span>
+    </div>
+
+    <div id="chatLog" class="chat-log" aria-live="polite">
+      <div class="chat-message assistant">
+        <strong>Spotter</strong>
+        <p>Ready. Pick a session if useful, then type below or tap <em>Start talking</em>. Stream Deck keys wake me into a coaching stance and start listening.</p>
+      </div>
+    </div>
+
+    <div class="chat-compose">
+      <textarea id="chatInput" rows="3" placeholder="Type a question, paste a workshop capture, or tap Start talking."></textarea>
+      <div class="compose-actions">
+        <button class="button talk-toggle" id="talkBtn" type="button" aria-pressed="false">
+          <img class="button-icon" src="/static/icons/start-talking.svg" alt=""><span>Start talking</span>
+        </button>
+        <button class="button primary" id="sendBtn" type="button"><img class="button-icon" src="/static/icons/coach.svg" alt="">Send</button>
+        <span class="muted" id="spotterSttEngineNote"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+const SPOTTER_MODES = {{ modes | tojson }};
+const MODE_BY_ID = Object.fromEntries(SPOTTER_MODES.map((mode) => [mode.id, mode]));
+const SPEAK_ALOUD_FALLBACK = {{ 'true' if speak_aloud else 'false' }};
+const TTS_PROVIDER_FALLBACK = "{{ tts_provider }}";
+
+const chatLog = document.getElementById("chatLog");
+const chatInput = document.getElementById("chatInput");
+const statusLine = document.getElementById("statusLine");
+const sendBtn = document.getElementById("sendBtn");
+const talkBtn = document.getElementById("talkBtn");
+const exportMdBtn = document.getElementById("exportMdBtn");
+const listenState = document.getElementById("listenState");
+const spotterDeck = document.getElementById("spotterDeck");
+const DECK_IDLE = "/static/spotter-idle.png";
+const DECK_FRAMES = ["/static/spotter-frame-0.png", "/static/spotter-frame-1.png", "/static/spotter-frame-2.png"];
+DECK_FRAMES.forEach((src) => { const pre = new Image(); pre.src = src; });  // preload for smooth playback
+let deckTimer = null;
+let deckIdx = 0;
+function setBusy(on) {
+  if (!spotterDeck) return;
+  if (on) {
+    if (deckTimer) return;  // already playing
+    deckIdx = 0;
+    spotterDeck.src = DECK_FRAMES[0];
+    deckTimer = setInterval(() => {
+      deckIdx = (deckIdx + 1) % DECK_FRAMES.length;
+      spotterDeck.src = DECK_FRAMES[deckIdx];
+    }, 180);
+  } else {
+    if (deckTimer) { clearInterval(deckTimer); deckTimer = null; }
+    spotterDeck.src = DECK_IDLE;
+  }
+}
+const sessionSearch = document.getElementById("sessionSearch");
+const sessionKey = document.getElementById("sessionKey");
+const sessionHint = document.getElementById("sessionHint");
+const sessionOptions = Array.from(document.querySelectorAll("#sessionOptions option")).map((option) => ({
+  label: option.value,
+  key: option.dataset.key || "",
+}));
+let activeMode = "ask";
+let pendingPrompt = "";
+let micDevice = "system-default";
+let sttProvider = "local";
+const configuredWhisperModel = {{ transcription_model | tojson }};
+function updateSpotterSttControls() {
+  const engineNote = document.getElementById("spotterSttEngineNote");
+  const useElevenLabs = sttProvider === "elevenlabs";
+  const useOpenAI = sttProvider === "openai";
+  if (engineNote) engineNote.textContent = useElevenLabs
+    ? "Transcription: ElevenLabs Scribe v2 · change in Settings"
+    : useOpenAI
+      ? "Transcription: OpenAI GPT-4o mini · change in Settings"
+      : "Transcription: Local Whisper · private and near-live · change in Settings";
+}
+fetch("/api/voice-config").then((r) => (r.ok ? r.json() : null)).then((c) => {
+  if (c) {
+    if (c.microphone) micDevice = c.microphone;
+    if (c.stt_provider) sttProvider = c.stt_provider;
+  }
+  updateSpotterSttControls();
+}).catch(() => updateSpotterSttControls());
+let recorder, chunks = [];
+let conversation = [];
+let recognition = null;
+let liveText = "";
+let listening = false;
+let stopRequested = false;
+let silenceTimer = null;
+const AUTO_SUBMIT_MS = 1200;
+
+function esc(value) {
+  return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+}
+
+function setStance(modeId) {
+  activeMode = modeId || "ask";
+}
+function stanceLabel() {
+  const mode = MODE_BY_ID[activeMode] || MODE_BY_ID["ask"];
+  return mode ? (mode.wake_label || mode.label) : "Ask";
+}
+
+function resolveSession() {
+  const typed = sessionSearch.value.trim();
+  const match = sessionOptions.find((row) => row.label.toLowerCase() === typed.toLowerCase() || row.key.toLowerCase() === typed.toLowerCase());
+  sessionKey.value = match ? match.key : "";
+  sessionHint.textContent = match
+    ? `Using session memory: ${match.label}.`
+    : "Spotter starts fresh each time. Select a session when you want its captured notes in memory.";
+  return { key: sessionKey.value, label: match ? match.label : "" };
+}
+
+function addMessage(role, text, detail) {
+  conversation.push({ role, text, detail: detail || "", at: new Date().toISOString() });
+  const item = document.createElement("div");
+  item.className = `chat-message ${role}`;
+  item.innerHTML = `<strong>${role === "user" ? "You" : "Spotter"}</strong><p>${esc(text).replace(/\n/g, "<br>")}</p>`;
+  if (detail) item.innerHTML += `<div class="chat-detail">${detail}</div>`;
+  chatLog.appendChild(item);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  exportMdBtn.disabled = conversation.length <= 1;
+}
+
+function list(title, items) {
+  if (!items || !items.length) return "";
+  return `<h3>${esc(title)}</h3><ul>${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`;
+}
+
+function resultDetail(r) {
+  return `<h3>${esc(r.title)}</h3><p>${esc(r.summary)}</p>` +
+    list("Evidence", r.evidence) +
+    list("Insights", r.insights) +
+    list("Recommendations", r.recommendations) +
+    list("Actions", r.actions) +
+    list("Questions", r.questions);
+}
+
+function speakBrowser(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1;
+  window.speechSynthesis.speak(utterance);
+}
+
+async function speak(text) {
+  if (!text) return;
+  let speakAloud = SPEAK_ALOUD_FALLBACK;
+  let ttsProvider = TTS_PROVIDER_FALLBACK;
+  try {
+    const r = await fetch("/api/voice-config");
+    if (r.ok) { const cfg = await r.json(); speakAloud = !!cfg.speak_aloud; ttsProvider = cfg.tts_provider || ttsProvider; }
+  } catch (e) {}
+  if (!speakAloud) {
+    statusLine.textContent = "Spoken replies are off — check 'Speak responses aloud' in Settings.";
+    return;
+  }
+  if (ttsProvider === "openai" || ttsProvider === "elevenlabs") {
+    try {
+      const res = await fetch("/api/speak", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text})
+      });
+      const ct = res.headers.get("content-type") || "";
+      if (res.ok && ct.includes("audio")) {
+        const blob = await res.blob();
+        const audio = new Audio(URL.createObjectURL(blob));
+        audio.onended = () => URL.revokeObjectURL(audio.src);
+        try {
+          await audio.play();
+        } catch (e) {
+          statusLine.textContent = "Audio ready — click anywhere on the page once to allow playback, then try again.";
+        }
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (data.error) statusLine.textContent = data.error;
+    } catch (err) {
+      // fall through to the browser voice
+    }
+  }
+  speakBrowser(text);
+}
+
+async function sendToSpotter(text, mode) {
+  const cleanText = (text || "").trim();
+  if (!cleanText) return;
+  const effectiveMode = mode || activeMode || "ask";
+  activeMode = "ask";
+  const session = resolveSession();
+  addMessage("user", cleanText);
+  chatInput.value = "";
+  statusLine.textContent = "Spotter is thinking...";
+  sendBtn.disabled = true;
+  setBusy(true);
+  const res = await fetch("/api/spotter", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      mode: effectiveMode,
+      text: cleanText,
+      session: session.key,
+      session_label: session.label
+    })
+  });
+  const data = await res.json();
+  sendBtn.disabled = false;
+  setBusy(false);
+  if (!data.ok) {
+    statusLine.textContent = data.error || "Spotter failed.";
+    return;
+  }
+  const r = data.result;
+  addMessage("assistant", r.spoken_response, resultDetail(r));
+  speak(r.spoken_response);
+  statusLine.textContent = data.message || "Ready.";
+}
+
+async function transcribeBlob(blob) {
+  statusLine.textContent = "Transcribing voice...";
+  setBusy(true);
+  const reader = new FileReader();
+  reader.onloadend = async () => {
+    const res = await fetch("/api/transcribe-audio", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        filename: "spotter-recording.webm",
+        content_type: blob.type || "audio/webm",
+        data: reader.result,
+        model: configuredWhisperModel
+      })
+    });
+    const data = await res.json();
+    let transcript = (data.ok && data.transcript) ? data.transcript : "";
+    if (!transcript && liveText.trim()) {
+      transcript = liveText.trim();
+      statusLine.textContent = "Used live transcript.";
+    }
+    if (!transcript) {
+      statusLine.textContent = data.error || "Transcription failed.";
+      setBusy(false);
+      return;
+    }
+    liveText = "";
+    const prompt = pendingPrompt ? `${pendingPrompt}\n\nWorkshop capture:\n${transcript}` : transcript;
+    pendingPrompt = "";
+    statusLine.textContent = "Voice captured. Sending to Spotter...";
+    sendToSpotter(prompt, activeMode);
+  };
+  reader.readAsDataURL(blob);
+}
+
+function setListeningUI(on) {
+  talkBtn.classList.toggle("listening", on);
+  talkBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  talkBtn.querySelector("span").textContent = on ? "Stop talking" : "Start talking";
+  talkBtn.querySelector("img").src = on ? "/static/icons/stop-talking.svg" : "/static/icons/start-talking.svg";
+  listenState.textContent = on ? "Listening…" : "Mic off";
+  listenState.classList.toggle("live", on);
+}
+
+async function startRecorderCapture() {
+  // Record-then-transcribe: used when live browser speech recognition is
+  // unavailable or broken (e.g. the SKATE app window / an embedded webview).
+  let stream;
+  try {
+    const audioConstraint = (micDevice && micDevice !== "system-default") ? { deviceId: micDevice } : true;
+    stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+  } catch (err) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err2) {
+      listening = false;
+      setListeningUI(false);
+      statusLine.textContent = "Microphone permission was blocked.";
+      return;
+    }
+  }
+  recorder = new MediaRecorder(stream);
+  chunks = [];
+  recorder.ondataavailable = (event) => chunks.push(event.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach((track) => track.stop());
+    listening = false;
+    setListeningUI(false);
+    transcribeBlob(new Blob(chunks, {type: recorder.mimeType || "audio/webm"}));
+  };
+  recorder.start();
+  listening = true;
+  setListeningUI(true);
+  statusLine.textContent = (pendingPrompt ? `Listening in ${stanceLabel()} stance…` : "Listening…") + " · recording — press Stop (or Ctrl+Alt+Shift+X) to transcribe";
+}
+
+async function startListening(prompt, mode) {
+  if (listening) return;
+  if (mode) setStance(mode);
+  pendingPrompt = prompt || "";
+  stopRequested = false;
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  // The SKATE app window (pywebview / WebView2) *defines* SpeechRecognition but
+  // its speech service does not actually work, so a plain existence check is not
+  // enough. Skip live SR there and go straight to record-then-transcribe.
+  const inAppWindow = !!window.pywebview;
+  // Live-first: when the browser truly supports speech recognition, stream words
+  // into the box and auto-submit after a pause.
+  if (SR && !inAppWindow) {
+    // Live-first: browser speech recognition runs standalone (no MediaRecorder),
+    // so there is no microphone conflict and words stream in as you speak.
+    liveText = "";
+    let srHadResult = false;
+    let srFailed = false;
+    recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event) => {
+      srHadResult = true;
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const piece = event.results[i][0].transcript;
+        if (event.results[i].isFinal) liveText += piece + " ";
+        else interim += piece;
+      }
+      chatInput.value = (liveText + interim).replace(/\s+/g, " ").trimStart();
+      // Auto-submit after a short pause in speech.
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => {
+        stopRequested = true;
+        if (recognition) { try { recognition.stop(); } catch (e) {} }
+      }, AUTO_SUBMIT_MS);
+    };
+    recognition.onerror = (event) => {
+      // A service/network error before any result means SR is present but
+      // broken in this environment — fall back to record-then-transcribe.
+      const fatal = ["network", "service-not-allowed", "audio-capture", "language-not-supported", "not-allowed"];
+      if (!srHadResult && fatal.includes(event.error)) srFailed = event.error;
+    };
+    recognition.onend = () => {
+      clearTimeout(silenceTimer);
+      if (srFailed && !stopRequested) {
+        // Live SR is unusable here. Hand off to the recorder path, keeping the
+        // pending stance prompt intact.
+        recognition = null;
+        listening = false;
+        if (srFailed === "not-allowed") {
+          setListeningUI(false);
+          statusLine.textContent = "Microphone permission was blocked.";
+          return;
+        }
+        startRecorderCapture();
+        return;
+      }
+      // Chrome ends recognition after a pause; restart until the user taps Stop.
+      if (!stopRequested && recognition) {
+        try { recognition.start(); return; } catch (e) {}
+      }
+      recognition = null;
+      listening = false;
+      setListeningUI(false);
+      const text = (chatInput.value || liveText).trim();
+      liveText = "";
+      if (!text) { statusLine.textContent = "No speech captured."; return; }
+      const promptText = pendingPrompt ? `${pendingPrompt}\n\nWorkshop capture:\n${text}` : text;
+      pendingPrompt = "";
+      statusLine.textContent = "Voice captured. Sending to Spotter...";
+      sendToSpotter(promptText, activeMode);
+    };
+    try {
+      recognition.start();
+      listening = true;
+      setListeningUI(true);
+      statusLine.textContent = (pendingPrompt ? `Listening in ${stanceLabel()} stance…` : "Listening…") + " live transcript on · auto-sends when you pause";
+      return;
+    } catch (e) {
+      recognition = null;
+    }
+  }
+
+  // No (working) browser speech support: record then transcribe on stop.
+  await startRecorderCapture();
+}
+
+function stopListening() {
+  stopRequested = true;
+  clearTimeout(silenceTimer);
+  if (recognition) { try { recognition.stop(); } catch (e) {} return; }
+  if (recorder && recorder.state === "recording") recorder.stop();
+}
+
+function toggleListening() {
+  if (listening) stopListening();
+  else startListening("", activeMode);
+}
+
+function exportMarkdown() {
+  const session = resolveSession();
+  const lines = [
+    "# Spotter Conversation",
+    "",
+    `Date: ${new Date().toLocaleString()}`,
+    `Session: ${session.label || "None"}`,
+    "",
+    ...conversation.map((msg) => `## ${msg.role === "user" ? "You" : "Spotter"}\n\n${msg.text}\n`)
+  ];
+  const blob = new Blob([lines.join("\n")], {type: "text/markdown"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `spotter-conversation-${new Date().toISOString().slice(0, 10)}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+sessionSearch.addEventListener("input", resolveSession);
+sendBtn.addEventListener("click", () => sendToSpotter(chatInput.value, activeMode));
+chatInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    sendBtn.click();
+  }
+});
+talkBtn.addEventListener("click", toggleListening);
+exportMdBtn.addEventListener("click", exportMarkdown);
+
+// Stream Deck / keyboard prompt wake keys. Each fires a pre-prompt stance and starts listening.
+const promptHotkeys = {
+  o: "observe",
+  f: "frame-challenge",
+  h: "hmw",
+  y: "five-whys",
+  k: "kaizen",
+  m: "process-map",
+  w: "find-waste",
+  z: "synthesize-notes",
+  t: "next-experiment",
+  r: "executive-readout",
+  q: "ask"
+};
+document.addEventListener("keydown", (event) => {
+  if (!(event.ctrlKey && event.altKey && event.shiftKey) || event.metaKey) return;
+  const keyName = event.key.toLowerCase();
+  if (event.code === "Space") {
+    event.preventDefault();
+    startListening("", activeMode);
+  } else if (keyName === "x") {
+    event.preventDefault();
+    stopListening();
+  } else if (promptHotkeys[keyName]) {
+    const modeId = promptHotkeys[keyName];
+    const mode = MODE_BY_ID[modeId];
+    if (mode) {
+      event.preventDefault();
+      startListening(mode.prompt || "", modeId);
+    }
+  }
+});
+
+setStance("ask");
+setListeningUI(false);
+resolveSession();
+
+// Voice readiness check — tells you at a glance if the server is fresh and TTS is on.
+(async () => {
+  const voiceState = document.getElementById("voiceState");
+  if (!voiceState) return;
+  try {
+    const r = await fetch("/api/voice-config");
+    if (!r.ok) { voiceState.textContent = "Voice: restart SKATE (stale server)"; voiceState.style.color = "#c0392b"; return; }
+    const cfg = await r.json();
+    if (!cfg.speak_aloud) { voiceState.textContent = "Voice: muted (enable in Settings)"; voiceState.style.color = "var(--color-muted, #7a869a)"; }
+    else if (cfg.tts_provider === "openai") { voiceState.textContent = "Voice: OpenAI GPT-Realtime mini ready"; voiceState.style.color = "#15994e"; }
+    else if (cfg.tts_provider === "elevenlabs") { voiceState.textContent = "Voice: ElevenLabs ready"; voiceState.style.color = "#15994e"; }
+    else { voiceState.textContent = "Voice: browser"; voiceState.style.color = "var(--color-muted, #7a869a)"; }
+  } catch (e) {
+    voiceState.textContent = "Voice: restart SKATE";
+    voiceState.style.color = "#c0392b";
+  }
+})();
+</script>
+{% endblock %}

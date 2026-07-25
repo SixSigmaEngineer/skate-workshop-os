@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" role="img" aria-label="Rails between ideas skateboard">
+  <rect x="18" y="22" width="604" height="136" rx="68" fill="#f7fbfd" stroke="#c8d8e8" stroke-width="4"/>
+  <polyline points="105,116 188,72 270,112 354,62 435,106 515,74" fill="none" stroke="#6f89ad" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#31425e"><circle cx="105" cy="116" r="10"/><circle cx="188" cy="72" r="10"/><circle cx="270" cy="112" r="10"/><circle cx="354" cy="62" r="10"/><circle cx="435" cy="106" r="10"/><circle cx="515" cy="74" r="10"/></g>
+  <text x="320" y="145" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="5" fill="#526173">RAILS BETWEEN IDEAS</text>
+</svg>

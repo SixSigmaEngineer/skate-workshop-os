@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="skate-mark">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#202F4E"/>
+  <path d="M72 22 L100 88 L86 88 L72 54 L58 88 L44 88 Z" fill="#FFFFFF"/>
+  <path d="M34 100 Q40 110 52 110 L92 110 Q104 110 110 100" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="56" y1="110" x2="56" y2="116" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <line x1="88" y1="110" x2="88" y2="116" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="56" cy="120" r="7" fill="#FFFFFF"/><circle cx="56" cy="120" r="2.6" fill="#202F4E"/>
+  <circle cx="88" cy="120" r="7" fill="#FFFFFF"/><circle cx="88" cy="120" r="2.6" fill="#202F4E"/>
+</svg>

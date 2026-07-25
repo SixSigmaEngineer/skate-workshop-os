@@ -1,0 +1,569 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if mode == "edit" else "New" }} Note{% endblock %}
+{% block content %}
+<section class="pagehead">
+  <div>
+    <h1>{{ title or "New Note" }}</h1>
+    <p class="muted">Write the note. SKATE can classify it and you can drop structured design-thinking blocks into the markdown.</p>
+  </div>
+  <div class="toolbar">
+    <button class="button" type="button" id="compressBtn"><img class="button-icon" src="/static/icons/wand.svg" alt="">Compress Note</button>
+    <button class="button" type="button" id="suggestBtn"><img class="button-icon" src="/static/icons/wand.svg" alt="">Suggest Metadata</button>
+  </div>
+</section>
+
+<form method="post" action="{{ action }}" class="form" id="noteForm" data-note-draft-id="{{ request.query_params.get('tab', '') }}">
+  <div class="two">
+    <label>Title<input name="title" value="{{ title }}" required></label>
+    <label>Date<input name="entry_date" type="date" value="{{ entry_date }}"></label>
+  </div>
+
+  <section class="lineup-fields panel" id="lineupFields" {% if entry_type != "action" %}hidden{% endif %}>
+    <div><p class="eyebrow">The Lineup</p><h2>Action tracking</h2><p class="muted">This Action Item will appear in The Lineup. It may stand alone or stay tied to the selected session.</p></div>
+    <div class="three">
+      <label>Lineup type
+        <select name="lineup_kind" id="noteLineupKind"><option value="action" {% if lineup_kind != "standard_work" %}selected{% endif %}>Action Item</option><option value="standard_work" {% if lineup_kind == "standard_work" %}selected{% endif %}>Standard Work</option></select>
+      </label>
+      <label>Owner<input name="owner" value="{{ owner }}" placeholder="Optional"></label>
+      <label>Due<input name="due_date" type="date" value="{{ due_date }}"></label>
+    </div>
+    <div class="two">
+      <label>Cadence<select name="cadence">{% for key, label in lineup_cadences.items() %}<option value="{{ key }}" {% if cadence == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label>Progress<select name="lineup_status"><option value="open" {% if lineup_status != "landed" %}selected{% endif %}>Up Next</option><option value="landed" {% if lineup_status == "landed" %}selected{% endif %}>Landed</option></select></label>
+    </div>
+  </section>
+  <div class="three">
+    <label>Object Type
+      <select name="entry_type" id="entryType">
+        {% for key, meta in entry_types.items() %}
+          <option value="{{ key }}" {% if key == entry_type %}selected{% endif %}>{{ meta.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Workshop / Session
+      <select name="session" id="sessionSelect">
+        <option value="">No session</option>
+        {% for row in sessions %}
+          <option value="{{ row.key }}" data-label="{{ row.label }}" {% if row.key == session %}selected{% endif %}>{{ row.label }}</option>
+        {% endfor %}
+        {% if session and not sessions|selectattr("key", "equalto", session)|list %}
+          <option value="{{ session }}" data-label="{{ session_label }}" selected>{{ session_label or session }}</option>
+        {% endif %}
+      </select>
+    </label>
+    <label>New session name
+      <input id="newSessionLabel" placeholder="Only if this is a new workshop">
+    </label>
+    <input type="hidden" name="session_label" id="sessionLabel" value="{{ session_label }}">
+    <input type="hidden" name="session_status" value="{{ session_status }}">
+  </div>
+  <div class="two">
+    <label>Themes / topics
+      <input name="themes" id="themes" value="{{ note_themes }}" placeholder="Advisor Productivity, Process Waste">
+      <span class="field-help">Big reusable topics for filtering and agent memory.</span>
+    </label>
+    <label>Tags / keywords
+      <input name="tags" id="tags" value="{{ tags }}" placeholder="underwriting, rekeying, client-trust">
+      <span class="field-help">Specific keywords. SKATE will store them as plain markdown tags.</span>
+    </label>
+  </div>
+  <div class="theme-picks" aria-label="Common themes">
+    {% for theme in consulting_themes %}
+      <button class="theme-pick" type="button" data-theme="{{ theme }}">{{ theme }}</button>
+    {% endfor %}
+  </div>
+  <details>
+    <summary>Relationships</summary>
+    <label>Relationships
+      <textarea name="relationships" id="relationships" rows="4" placeholder="supports | H-social-sciences/example.md | evidence note">{{ relationships }}</textarea>
+    </label>
+  </details>
+  <div class="two">
+    <label>Status
+      <select name="status">
+        {% for option in status_options %}
+          <option value="{{ option }}" {% if status == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+      <span class="field-help">Inactive notes stay in your library but are excluded from The Grind.</span>
+    </label>
+    <label>Source
+      <select name="source">
+        {% for option in source_options %}
+          <option value="{{ option }}" {% if source == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <section class="capture-builder">
+    <div>
+      <p class="quick-type">Quick capture: each button inserts a meeting-note bullet — <code>#P:</code> pain, <code>#O:</code> observation, <code>#A:</code> action, <code>#Q:</code> question, <code>#S:</code> solution, <code>#R:</code> recommendation, <code>#I:</code> insight.</p>
+    </div>
+    <div class="block-buttons">
+      <button class="block-button block-pain" draggable="true" type="button" data-type="pain" data-code="#P: " data-insert="- #P: "><span>#P</span>Pain</button>
+      <button class="block-button block-observation" draggable="true" type="button" data-type="observation" data-code="#O: " data-insert="- #O: "><span>#O</span>Observation</button>
+      <button class="block-button block-action" draggable="true" type="button" data-type="action" data-code="#A: " data-insert="- #A: "><span>#A</span>Action Item</button>
+      <button class="block-button block-question" draggable="true" type="button" data-type="question" data-code="#Q: " data-insert="- #Q: "><span>#Q</span>Question</button>
+      <button class="block-button block-solution" draggable="true" type="button" data-type="solution" data-code="#S: " data-insert="- #S: "><span>#S</span>Solution</button>
+      <button class="block-button block-recommendation" draggable="true" type="button" data-type="recommendation" data-code="#R: " data-insert="- #R: "><span>#R</span>Recommendation</button>
+      <button class="block-button block-insight" draggable="true" type="button" data-type="insight" data-code="#I: " data-insert="- #I: "><span>#I</span>Insight</button>
+    </div>
+  </section>
+
+  <section class="transcription-panel">
+    <label class="drop-zone" id="audioDropZone">
+      <input id="audioUpload" type="file" accept="audio/*,video/*,.wav,.mp3,.m4a,.webm,.ogg,.mp4,.mov,.mkv,.avi">
+      <strong id="audioDropTitle">Drop an audio or video recording here</strong>
+      <span id="audioFileName">Or click to choose a file · mp3, m4a, wav, webm, ogg, mp4, mov, mkv, or avi · 250 MB maximum</span>
+    </label>
+    <div class="toolbar">
+      <label class="inline-select">Whisper model
+        <select id="whisperModel">
+          {% for model in whisper_models %}
+            <option value="{{ model.id }}" {% if model.id == transcription_model %}selected{% endif %}>{{ model.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="button" type="button" id="recordBtn" disabled><img class="button-icon" src="/static/icons/record.svg?v=red1" alt=""><span>Transcribe Recording</span></button>
+      <button class="button primary" type="button" id="summarizeTranscriptBtn" disabled>Summarize Transcript</button>
+      <span class="transcription-status" id="transcriptionStatus" role="status" aria-live="polite">Checking local Whisper…</span>
+    </div>
+    <div class="transcription-progress" id="transcriptionProgress" hidden>
+      <div class="transcription-progress-head">
+        <span id="transcriptionProgressPhase">Preparing recording</span>
+        <span><strong id="transcriptionProgressPercent">0%</strong> <span id="transcriptionElapsed">· 0:00 elapsed</span></span>
+      </div>
+      <div class="transcription-progress-track" role="progressbar" aria-label="Transcription progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="transcriptionProgressTrack">
+        <span id="transcriptionProgressBar"></span>
+      </div>
+    </div>
+  </section>
+
+  <label>Markdown<textarea name="body" id="body" rows="22">{{ body }}</textarea></label>
+  <div id="statusLine" class="muted"></div>
+  <button class="button primary" type="submit"><img class="button-icon" src="/static/icons/save.svg" alt="">Save Memory Object</button>
+</form>
+
+<script>
+const body = document.getElementById("body");
+const statusLine = document.getElementById("statusLine");
+const entryType = document.getElementById("entryType");
+const lineupFields = document.getElementById("lineupFields");
+const sessionSelect = document.getElementById("sessionSelect");
+const sessionLabel = document.getElementById("sessionLabel");
+const newSessionLabel = document.getElementById("newSessionLabel");
+const noteForm = document.getElementById("noteForm");
+function updateLineupFields() { lineupFields.hidden = entryType.value !== "action"; }
+entryType.addEventListener("change", updateLineupFields);
+updateLineupFields();
+const draftId = noteForm.dataset.noteDraftId || "";
+function getDraftStorageKey() {
+  return draftId && window.SKATEWorkspace ? window.SKATEWorkspace.draftPrefix + draftId : "";
+}
+function draftFields() {
+  return Array.from(noteForm.querySelectorAll("input, select, textarea")).filter((field) =>
+    field.type !== "file" && field.type !== "submit" && field.type !== "button"
+  );
+}
+function saveDraft() {
+  const draftStorageKey = getDraftStorageKey();
+  if (!draftStorageKey) return;
+  const values = {};
+  draftFields().forEach((field) => {
+    const key = field.name || field.id;
+    if (!key) return;
+    values[key] = field.type === "checkbox" ? field.checked : field.value;
+  });
+  localStorage.setItem(draftStorageKey, JSON.stringify(values));
+  const title = noteForm.querySelector("[name=title]").value;
+  window.SKATEWorkspace.renameTab(draftId, title);
+}
+function restoreDraft() {
+  const draftStorageKey = getDraftStorageKey();
+  if (!draftStorageKey) return;
+  try {
+    const values = JSON.parse(localStorage.getItem(draftStorageKey) || "{}");
+    draftFields().forEach((field) => {
+      const key = field.name || field.id;
+      if (!key || !(key in values)) return;
+      if (field.type === "checkbox") field.checked = Boolean(values[key]);
+      else field.value = values[key];
+    });
+  } catch (_) {
+    localStorage.removeItem(draftStorageKey);
+  }
+}
+function initializeDraft() {
+  restoreDraft();
+  syncSessionLabel();
+  refreshSummarizeAvailability();
+  noteForm.addEventListener("input", saveDraft);
+  noteForm.addEventListener("change", saveDraft);
+  noteForm.addEventListener("submit", () => {
+    saveDraft();
+    if (draftId) sessionStorage.setItem("skate-workspace-submitted-tab", draftId);
+  });
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initializeDraft, {once: true});
+else initializeDraft();
+function insertIntoBody(text) {
+  const start = body.selectionStart || body.value.length;
+  const prefix = body.value && !body.value.endsWith("\n") ? "\n\n" : "";
+  const insert = prefix + text;
+  body.value = body.value.slice(0, start) + insert + body.value.slice(start);
+  body.focus();
+  body.selectionStart = body.selectionEnd = start + insert.length;
+  saveDraft();
+}
+function syncSessionLabel() {
+  const selected = sessionSelect.selectedOptions[0];
+  sessionLabel.value = newSessionLabel.value.trim() || (selected ? selected.dataset.label || "" : "");
+}
+sessionSelect.addEventListener("change", syncSessionLabel);
+newSessionLabel.addEventListener("input", syncSessionLabel);
+syncSessionLabel();
+document.querySelectorAll(".block-button").forEach((button) => {
+  button.addEventListener("click", () => {
+    entryType.value = button.dataset.type || entryType.value;
+    insertIntoBody(button.dataset.insert);
+  });
+  button.addEventListener("dragstart", (event) => {
+    event.dataTransfer.setData("text/plain", button.dataset.insert);
+    event.dataTransfer.effectAllowed = "copy";
+  });
+});
+body.addEventListener("dragover", (event) => event.preventDefault());
+body.addEventListener("drop", (event) => {
+  const text = event.dataTransfer.getData("text/plain");
+  if (!text) return;
+  event.preventDefault();
+  insertIntoBody(text);
+});
+document.querySelectorAll(".theme-pick").forEach((button) => {
+  button.addEventListener("click", () => {
+    const field = document.getElementById("themes");
+    const existing = field.value.split(",").map((item) => item.trim()).filter(Boolean);
+    if (!existing.includes(button.dataset.theme)) existing.push(button.dataset.theme);
+    field.value = existing.join(", ");
+    saveDraft();
+  });
+});
+document.getElementById("suggestBtn").addEventListener("click", async () => {
+  statusLine.textContent = "Suggesting metadata...";
+  const res = await fetch("/api/classify-note", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({title: document.querySelector("[name=title]").value, body: body.value})
+  });
+  const data = await res.json();
+  if (!data.ok) { statusLine.textContent = data.error || "Suggestion failed."; return; }
+  const s = data.suggestion;
+  document.getElementById("entryType").value = s.entry_type || document.getElementById("entryType").value;
+  document.getElementById("themes").value = (s.themes || []).join(", ");
+  document.getElementById("tags").value = (s.tags || []).join(", ");
+  saveDraft();
+  statusLine.textContent = data.message || s.reasoning || "Metadata suggested.";
+});
+document.getElementById("compressBtn").addEventListener("click", async () => {
+  statusLine.textContent = "Compressing note...";
+  const res = await fetch("/api/compress-note", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      title: document.querySelector("[name=title]").value,
+      tags: document.getElementById("tags").value,
+      body: body.value
+    })
+  });
+  const data = await res.json();
+  if (!data.ok) { statusLine.textContent = data.error || "Compression failed."; return; }
+  insertIntoBody(data.markdown || "");
+  statusLine.textContent = data.message || "Compression added to note.";
+});
+let pendingTranscriptionFile = null;
+let transcriptionEngineReady = false;
+function transcriptText() {
+  for (const marker of ["## Raw Transcript", "## Transcript"]) {
+    const index = body.value.lastIndexOf(marker);
+    if (index >= 0) return body.value.slice(index + marker.length).trim();
+  }
+  return "";
+}
+function selectedTranscriptText() {
+  const start = Number(body.selectionStart || 0);
+  const end = Number(body.selectionEnd || 0);
+  return end > start ? body.value.slice(start, end).trim() : "";
+}
+function refreshSummarizeAvailability() {
+  const button = document.getElementById("summarizeTranscriptBtn");
+  const hasSelection = Boolean(selectedTranscriptText());
+  button.disabled = !(hasSelection || transcriptText());
+  button.textContent = hasSelection ? "Summarize Selection" : "Summarize Transcript";
+}
+function setRawTranscript(transcript) {
+  const markers = ["## Raw Transcript", "## Transcript"];
+  let prefix = body.value.trimEnd();
+  for (const marker of markers) {
+    const index = prefix.lastIndexOf(marker);
+    if (index >= 0) {
+      prefix = prefix.slice(0, index).trimEnd();
+      break;
+    }
+  }
+  prefix = prefix.replace(/\n*## AI-Cleaned Meeting Notes[\s\S]*$/m, "").trimEnd();
+  body.value = `${prefix}\n\n## Raw Transcript\n\n${transcript.trim()}\n`;
+  refreshSummarizeAvailability();
+  saveDraft();
+}
+function insertCleanTranscriptNotes(markdown) {
+  const marker = "## Raw Transcript";
+  const index = body.value.lastIndexOf(marker);
+  if (index < 0) {
+    body.value = `${markdown.trim()}\n\n${body.value.trimStart()}`;
+    refreshSummarizeAvailability();
+    saveDraft();
+    return;
+  }
+  let prefix = body.value.slice(0, index).trimEnd();
+  const raw = body.value.slice(index).trimStart();
+  prefix = prefix.replace(/\n*## AI-Cleaned Meeting Notes[\s\S]*$/m, "").trimEnd();
+  body.value = `${prefix}\n\n${markdown.trim()}\n\n${raw}\n`;
+  refreshSummarizeAvailability();
+  saveDraft();
+}
+function updateTranscribeAvailability() {
+  document.getElementById("recordBtn").disabled = !(pendingTranscriptionFile && transcriptionEngineReady);
+}
+function stageTranscriptionFile(file) {
+  const transcriptionStatus = document.getElementById("transcriptionStatus");
+  if (!file || !file.size) {
+    transcriptionStatus.textContent = "That recording is empty. Choose another file.";
+    transcriptionStatus.dataset.state = "error";
+    return;
+  }
+  if (file.size > 250 * 1024 * 1024) {
+    transcriptionStatus.textContent = "That file is larger than 250 MB. Compress or split the recording first.";
+    transcriptionStatus.dataset.state = "error";
+    return;
+  }
+  pendingTranscriptionFile = file;
+  document.getElementById("audioDropTitle").textContent = "Recording ready to transcribe";
+  document.getElementById("audioFileName").textContent = `${file.name} · ${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+  audioDropZone.classList.add("file-ready");
+  transcriptionStatus.textContent = "Choose a Whisper model, then click Transcribe Recording.";
+  transcriptionStatus.dataset.state = "success";
+  updateTranscribeAvailability();
+}
+let transcriptionStartedAt = 0;
+let transcriptionElapsedTimer = null;
+function formatElapsed(milliseconds) {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+function updateTranscriptionProgress(percent, phase, state = "working") {
+  const progress = document.getElementById("transcriptionProgress");
+  const value = Math.max(0, Math.min(100, Math.round(percent)));
+  progress.hidden = false;
+  progress.dataset.state = state;
+  document.getElementById("transcriptionProgressPhase").textContent = phase;
+  document.getElementById("transcriptionProgressPercent").textContent = `${value}%`;
+  document.getElementById("transcriptionProgressBar").style.width = `${value}%`;
+  const track = document.getElementById("transcriptionProgressTrack");
+  track.setAttribute("aria-valuenow", String(value));
+  document.getElementById("transcriptionElapsed").textContent = `· ${formatElapsed(Date.now() - transcriptionStartedAt)} elapsed`;
+}
+function beginTranscriptionProgress() {
+  transcriptionStartedAt = Date.now();
+  clearInterval(transcriptionElapsedTimer);
+  updateTranscriptionProgress(0, "Preparing upload");
+  transcriptionElapsedTimer = setInterval(() => {
+    document.getElementById("transcriptionElapsed").textContent = `· ${formatElapsed(Date.now() - transcriptionStartedAt)} elapsed`;
+  }, 1000);
+}
+function stopTranscriptionProgress() {
+  clearInterval(transcriptionElapsedTimer);
+  transcriptionElapsedTimer = null;
+}
+function createTranscriptionJob(blob, filename) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/transcription-jobs");
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.setRequestHeader("X-SKATE-Filename", encodeURIComponent(filename));
+    xhr.setRequestHeader("X-SKATE-Content-Type", blob.type || "audio/webm");
+    xhr.setRequestHeader("X-SKATE-Model", document.getElementById("whisperModel").value);
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) updateTranscriptionProgress((event.loaded / event.total) * 10, "Uploading recording");
+    });
+    xhr.addEventListener("load", () => {
+      let data;
+      try { data = JSON.parse(xhr.responseText); }
+      catch (_) { reject(new Error(`The transcription service returned an unreadable response (${xhr.status}).`)); return; }
+      if (xhr.status >= 200 && xhr.status < 300 && data.ok) resolve(data.job_id);
+      else reject(new Error(data.error || "The transcription job could not be started."));
+    });
+    xhr.addEventListener("error", () => reject(new Error("The recording could not be uploaded to SKATE.")));
+    xhr.send(blob);
+  });
+}
+async function waitForTranscriptionJob(jobId) {
+  while (true) {
+    const response = await fetch(`/api/transcription-jobs/${encodeURIComponent(jobId)}`, {cache: "no-store"});
+    const job = await response.json();
+    if (!response.ok || !job.ok) throw new Error(job.error || "SKATE could not read transcription progress.");
+    if (job.status === "error") throw new Error(job.error || "Transcription failed.");
+    if (job.status === "complete") {
+      updateTranscriptionProgress(100, job.phase || "Transcript complete", "complete");
+      return job;
+    }
+    const overallProgress = 10 + (Number(job.progress || 0) * 0.9);
+    updateTranscriptionProgress(overallProgress, job.phase || "Transcribing recording");
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+}
+async function transcribeBlob(blob, filename) {
+  const transcriptionStatus = document.getElementById("transcriptionStatus");
+  const audioFileName = document.getElementById("audioFileName");
+  const recordBtn = document.getElementById("recordBtn");
+  const setTranscriptStatus = (message, state = "working") => {
+    transcriptionStatus.textContent = message;
+    transcriptionStatus.dataset.state = state;
+    statusLine.textContent = message;
+  };
+  if (!blob || !blob.size) {
+    setTranscriptStatus("That audio file is empty. Choose another recording.", "error");
+    return;
+  }
+  if (blob.size > 250 * 1024 * 1024) {
+    setTranscriptStatus("That file is larger than 250 MB. Compress or split the recording first.", "error");
+    return;
+  }
+  audioFileName.textContent = `${filename} · ${(blob.size / (1024 * 1024)).toFixed(1)} MB`;
+  setTranscriptStatus(`Reading ${filename}…`, "working");
+  recordBtn.disabled = true;
+  beginTranscriptionProgress();
+  try {
+    setTranscriptStatus(`Transcribing ${filename} locally…`, "working");
+    const jobId = await createTranscriptionJob(blob, filename);
+    updateTranscriptionProgress(10, "Recording uploaded");
+    const data = await waitForTranscriptionJob(jobId);
+    setRawTranscript(data.transcript);
+    setTranscriptStatus(`Transcript added from ${filename}.`, "success");
+    return true;
+  } catch (error) {
+    const message = error && error.message ? error.message : "The recording could not be transcribed.";
+    setTranscriptStatus(message, "error");
+    const current = Number(document.getElementById("transcriptionProgressPercent").textContent.replace("%", "")) || 0;
+    updateTranscriptionProgress(current, "Transcription stopped", "error");
+    return false;
+  } finally {
+    stopTranscriptionProgress();
+    updateTranscribeAvailability();
+  }
+}
+document.getElementById("summarizeTranscriptBtn").addEventListener("click", async () => {
+  const button = document.getElementById("summarizeTranscriptBtn");
+  const selectedText = selectedTranscriptText();
+  const transcript = selectedText || transcriptText();
+  if (!transcript) {
+    statusLine.textContent = "Highlight text or add a raw transcript before summarizing.";
+    return;
+  }
+  button.disabled = true;
+  button.textContent = selectedText ? "Summarizing Selection…" : "Summarizing Transcript…";
+  statusLine.textContent = selectedText ? "Summarizing highlighted transcript text..." : "Summarizing transcript...";
+  try {
+    const res = await fetch("/api/summarize-transcript", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({title: document.querySelector("[name=title]").value, transcript})
+    });
+    const data = await res.json();
+    if (!data.ok) { statusLine.textContent = data.error || "Transcript summary failed."; return; }
+    insertCleanTranscriptNotes(data.markdown || "");
+    const tags = data.summary && data.summary.tags ? data.summary.tags : [];
+    if (tags.length) {
+      const field = document.getElementById("tags");
+      const existing = field.value.split(",").map((item) => item.trim()).filter(Boolean);
+      tags.forEach((tag) => { if (!existing.includes(tag)) existing.push(tag); });
+      field.value = existing.join(", ");
+      saveDraft();
+    }
+    statusLine.textContent = data.message || (selectedText ? "Selection summary added." : "Transcript summary added.");
+  } catch (error) {
+    statusLine.textContent = error && error.message ? error.message : "Transcript summary failed.";
+  } finally {
+    refreshSummarizeAvailability();
+  }
+});
+document.getElementById("recordBtn").addEventListener("click", async () => {
+  if (!pendingTranscriptionFile) {
+    document.getElementById("transcriptionStatus").textContent = "Drop or choose an audio or video file first.";
+    document.getElementById("transcriptionStatus").dataset.state = "error";
+    return;
+  }
+  const file = pendingTranscriptionFile;
+  const succeeded = await transcribeBlob(file, file.name);
+  if (succeeded) {
+    pendingTranscriptionFile = null;
+    audioDropZone.classList.remove("file-ready");
+    document.getElementById("audioDropTitle").textContent = "Drop another audio or video recording here";
+    updateTranscribeAvailability();
+  }
+});
+document.getElementById("audioUpload").addEventListener("change", async (event) => {
+  const file = event.currentTarget.files[0];
+  if (!file) return;
+  stageTranscriptionFile(file);
+  event.currentTarget.value = "";
+});
+const audioDropZone = document.getElementById("audioDropZone");
+fetch("/api/transcription-health")
+  .then((response) => response.json())
+  .then((health) => {
+    const indicator = document.getElementById("transcriptionStatus");
+    if (!health.whisper) {
+      indicator.textContent = "Local Whisper is not installed. Run Install Local Whisper.bat once, then restart SKATE.";
+      indicator.dataset.state = "error";
+    } else if (!health.decoder) {
+      indicator.textContent = "Whisper is installed, but the audio decoder is missing. Run Install Local Whisper.bat again.";
+      indicator.dataset.state = "error";
+    } else if (!health.models.length) {
+      transcriptionEngineReady = true;
+      indicator.textContent = "Whisper is installed. The selected model will download on its first use while online.";
+      indicator.dataset.state = "working";
+    } else {
+      transcriptionEngineReady = true;
+      indicator.textContent = `Local Whisper ready · ${health.models.join(", ")}`;
+      indicator.dataset.state = "success";
+    }
+    updateTranscribeAvailability();
+  })
+  .catch(() => {
+    const indicator = document.getElementById("transcriptionStatus");
+    indicator.textContent = "SKATE could not check the local transcription engine. Restart SKATE and try again.";
+    indicator.dataset.state = "error";
+  });
+audioDropZone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  audioDropZone.classList.add("dragging");
+});
+audioDropZone.addEventListener("dragleave", () => audioDropZone.classList.remove("dragging"));
+audioDropZone.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  audioDropZone.classList.remove("dragging");
+  const file = event.dataTransfer.files[0];
+  if (!file) return;
+  stageTranscriptionFile(file);
+});
+body.addEventListener("input", refreshSummarizeAvailability);
+body.addEventListener("select", refreshSummarizeAvailability);
+body.addEventListener("keyup", refreshSummarizeAvailability);
+body.addEventListener("mouseup", refreshSummarizeAvailability);
+document.addEventListener("selectionchange", () => {
+  if (document.activeElement === body) refreshSummarizeAvailability();
+});
+refreshSummarizeAvailability();
+</script>
+{% endblock %}

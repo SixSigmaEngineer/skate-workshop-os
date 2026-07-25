@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="prompt-process-map">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#1F6FB2"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="30" y="38" width="34" height="26" rx="6"/>
+    <rect x="80" y="64" width="34" height="26" rx="6"/>
+    <path d="M64 51 L72 51 Q80 51 80 60 L80 64"/>
+  </g>
+  <path d="M80 56 L74 64 L86 64 Z" fill="#FFFFFF"/>
+  <text x="72" y="120" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="800" letter-spacing="1" fill="#EAF1FB">MAP FLOW</text>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="stop-talking">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#C0392B"/>
+  <rect x="60" y="26" width="24" height="50" rx="12" fill="#FFFFFF"/>
+  <path d="M46 60 a26 26 0 0 0 52 0" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <line x1="72" y1="86" x2="72" y2="98" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <line x1="58" y1="98" x2="86" y2="98" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <line x1="40" y1="32" x2="104" y2="92" stroke="#C0392B" stroke-width="16" stroke-linecap="round"/>
+  <line x1="40" y1="32" x2="104" y2="92" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <text x="72" y="128" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="800" letter-spacing="1" fill="#EAF1FB">STOP</text>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="sessions-skate">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#2C6E7F"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M44 50 L72 38 L100 50 L72 62 Z"/><path d="M44 64 L72 76 L100 64"/><path d="M44 78 L72 90 L100 78"/>
+  </g>
+  <text x="72" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800" letter-spacing="1" fill="#EAF1FB">SESSIONS</text>
+</svg>

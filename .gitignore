@@ -1,0 +1,67 @@
+# ─── Secrets & config ─────────────────────────────────────────
+# Holds API keys (OpenAI, ElevenLabs, …) and personal prefs. NEVER commit.
+settings.json
+*.env
+.env
+
+# ─── Private vault data ───────────────────────────────────────
+# Your real workshop/client notes stay local. The committed demo
+# lives in demo-vault/ instead. Delete these lines if you WANT to
+# version your own vault in this repo.
+/conversations/
+/sessions/
+/transcripts/
+/INDEX.md
+
+# User-supplied workshop reference material stays local. Keep only the
+# repository guide so users know where to place their own licensed sources.
+/workshop-knowledge-documents/*
+!/workshop-knowledge-documents/README.md
+/reference/
+
+# ─── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Virtual environments ─────────────────────────────────────
+.venv/
+.build-venv/
+venv/
+env/
+ENV/
+ui/.venv/
+
+# ─── Build artifacts ──────────────────────────────────────────
+build/
+dist/
+*.spec
+SKATE.exe
+*.pyz
+
+# ─── Caches & generated ───────────────────────────────────────
+embeddings.json
+*.log
+*.pid
+.cache/
+models/whisper/*.pt
+tools/ffmpeg.exe
+Push SKATE to GitHub.bat
+
+# ─── OS / editor cruft ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# embedding + retrieval caches
+.cache/
+
+# Prior-event branding asset kept local, not part of this repo
+branding-images/SOL-GPT-5.6.png

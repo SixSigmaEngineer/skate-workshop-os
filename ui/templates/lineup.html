@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}The Lineup{% endblock %}
+{% block content %}
+<section class="pagehead lineup-head">
+  <div>
+    <p class="eyebrow">Actions into motion</p>
+    <h1>The Lineup</h1>
+    <p class="muted">One flexible checklist for personal actions, session follow-through, and repeatable Standard Work.</p>
+  </div>
+  <div class="lineup-score" aria-label="Lineup summary">
+    <span><strong>{{ lineup_open_count }}</strong> Up Next</span>
+    <span><strong>{{ lineup_landed_count }}</strong> Landed</span>
+  </div>
+</section>
+
+<section class="panel lineup-add-panel">
+  <div class="section-heading"><div><p class="eyebrow">Quick add</p><h2>Add to the Lineup</h2></div></div>
+  <form method="post" action="/lineup/new" class="form lineup-add-form">
+    <div class="lineup-add-main">
+      <label>What needs to happen?<input name="title" placeholder="Send the client readout" required></label>
+      <label>Type
+        <select name="lineup_kind" id="lineupKind">
+          <option value="action">Action Item</option>
+          <option value="standard_work">Standard Work</option>
+        </select>
+      </label>
+      <label>Session
+        <select name="session">
+          <option value="">No session / flexible</option>
+          {% for row in sessions if row.key != "unassigned" %}
+            <option value="{{ row.key }}" {% if row.key == selected_session %}selected{% endif %}>{{ row.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="lineup-add-meta">
+      <label>Owner<input name="owner" placeholder="Optional"></label>
+      <label>Due<input name="due_date" type="date"></label>
+      <label>Cadence
+        <select name="cadence" id="lineupCadence">
+          {% for key, label in lineup_cadences.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Details<input name="details" placeholder="Optional context"></label>
+      <button class="button primary" type="submit">Add Action</button>
+    </div>
+  </form>
+</section>
+
+<form class="lineup-filter" method="get" action="/lineup">
+  <label>Show
+    <select name="session" onchange="this.form.submit()">
+      <option value="">Everything</option>
+      {% for row in sessions if row.key != "unassigned" %}
+        <option value="{{ row.key }}" {% if row.key == selected_session %}selected{% endif %}>{{ row.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+
+<div class="lineup-layout">
+  <section>
+    <div class="section-heading">
+      <div><p class="eyebrow">Ready to roll</p><h2>Up Next</h2></div>
+      <span class="muted">Check an action when it lands.</span>
+    </div>
+    <div class="lineup-list">
+      {% for item in lineup_actions if item.lineup_status != "landed" %}
+        <article class="lineup-item {% if item.due_date and item.due_date < lineup_today %}overdue{% endif %}">
+          <form method="post" action="/lineup/toggle/{{ item.file_id }}">
+            <input type="hidden" name="return_to" value="/lineup{% if selected_session %}?session={{ selected_session }}{% endif %}">
+            <button class="lineup-check" type="submit" aria-label="Mark {{ item.title }} landed"><span></span></button>
+          </form>
+          <div class="lineup-item-body">
+            <a class="item-title" href="/entry/{{ item.file_id }}">{{ item.title }}</a>
+            <div class="lineup-meta">
+              {% if item.session %}<a href="/session/{{ item.session }}">{{ item.session_display }}</a>{% else %}<span>Flexible</span>{% endif %}
+              {% if item.owner %}<span>{{ item.owner }}</span>{% endif %}
+              {% if item.due_date %}<span class="{% if item.due_date < lineup_today %}danger{% endif %}">{% if item.due_date < lineup_today %}Overdue · {% endif %}{{ item.due_date }}</span>{% endif %}
+            </div>
+          </div>
+          <a class="lineup-edit" href="/edit/{{ item.file_id }}">Edit</a>
+        </article>
+      {% else %}<div class="lineup-empty">Nothing waiting. Your board is clear.</div>{% endfor %}
+    </div>
+
+    {% if lineup_landed_count %}
+    <details class="landed-section">
+      <summary>Landed · {{ lineup_landed_count }}</summary>
+      <div class="lineup-list">
+        {% for item in lineup_actions if item.lineup_status == "landed" %}
+          <article class="lineup-item landed">
+            <form method="post" action="/lineup/toggle/{{ item.file_id }}">
+              <input type="hidden" name="return_to" value="/lineup{% if selected_session %}?session={{ selected_session }}{% endif %}">
+              <button class="lineup-check checked" type="submit" aria-label="Return {{ item.title }} to Up Next"><span>✓</span></button>
+            </form>
+            <div class="lineup-item-body"><a class="item-title" href="/entry/{{ item.file_id }}">{{ item.title }}</a><div class="lineup-meta"><span>Landed {{ item.last_completed }}</span></div></div>
+          </article>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </section>
+
+  <aside class="lineup-side">
+    <section class="standard-work-board">
+      <div class="section-heading"><div><p class="eyebrow">Repeatable rhythm</p><h2>Standard Work</h2></div></div>
+      <p class="muted">Daily, weekly, or monthly checks that return automatically after completion.</p>
+      <div class="lineup-list compact-lineup">
+        {% for item in standard_work %}
+          <article class="lineup-item {% if item.due_date and item.due_date < lineup_today %}overdue{% endif %}">
+            <form method="post" action="/lineup/toggle/{{ item.file_id }}">
+              <input type="hidden" name="return_to" value="/lineup{% if selected_session %}?session={{ selected_session }}{% endif %}">
+              <button class="lineup-check {% if item.last_completed == lineup_today %}checked{% endif %}" type="submit" aria-label="Complete {{ item.title }} for this cycle"><span>{% if item.last_completed == lineup_today %}✓{% endif %}</span></button>
+            </form>
+            <div class="lineup-item-body">
+              <a class="item-title" href="/entry/{{ item.file_id }}">{{ item.title }}</a>
+              <div class="lineup-meta"><span>{{ lineup_cadences.get(item.cadence, item.cadence) }}</span>{% if item.due_date %}<span>Next {{ item.due_date }}</span>{% endif %}</div>
+            </div>
+          </article>
+        {% else %}<div class="lineup-empty">Add routines like checking email, entering weekly hours, or reviewing client commitments.</div>{% endfor %}
+      </div>
+    </section>
+
+    <section class="captured-board">
+      <div class="section-heading"><div><p class="eyebrow">From your notes</p><h2>Captured Actions</h2></div></div>
+      <p class="muted"><code>#A</code> items found inside notes. Add the ones you want to actively track.</p>
+      <div class="captured-list">
+        {% for action in captured_actions[:6] %}
+          <article>
+            <p>{{ action.text }}</p>
+            <div><a href="/entry/{{ action.source_id }}">{{ action.source_title }}</a>
+            {% if action.promoted %}<span class="promoted">In Lineup</span>{% else %}
+              <form method="post" action="/lineup/promote/{{ action.source_id }}"><input type="hidden" name="fingerprint" value="{{ action.fingerprint }}"><button type="submit">Add</button></form>
+            {% endif %}</div>
+          </article>
+        {% else %}<div class="lineup-empty">No untracked <code>#A</code> actions in these notes.</div>{% endfor %}
+      </div>
+      {% if captured_actions|length > 6 %}
+      <details class="captured-more">
+        <summary>Show {{ captured_actions|length - 6 }} more captured actions</summary>
+        <div class="captured-list">
+          {% for action in captured_actions[6:] %}
+            <article><p>{{ action.text }}</p><div><a href="/entry/{{ action.source_id }}">{{ action.source_title }}</a>{% if action.promoted %}<span class="promoted">In Lineup</span>{% else %}<form method="post" action="/lineup/promote/{{ action.source_id }}"><input type="hidden" name="fingerprint" value="{{ action.fingerprint }}"><button type="submit">Add</button></form>{% endif %}</div></article>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    </section>
+  </aside>
+</div>
+<script>
+const kind = document.getElementById("lineupKind");
+const cadence = document.getElementById("lineupCadence");
+kind.addEventListener("change", () => {
+  if (kind.value === "standard_work" && cadence.value === "once") cadence.value = "weekly";
+  if (kind.value === "action") cadence.value = "once";
+});
+</script>
+{% endblock %}

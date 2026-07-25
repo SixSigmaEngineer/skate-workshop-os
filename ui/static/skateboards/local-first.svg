@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" role="img" aria-label="Local first skateboard">
+  <rect x="18" y="22" width="604" height="136" rx="68" fill="#f7fbfd" stroke="#c8d8e8" stroke-width="4"/>
+  <path d="M100 110 C170 52 245 48 320 92 S460 138 540 76" fill="none" stroke="#6f89ad" stroke-width="9" stroke-linecap="round"/>
+  <path d="M100 78 C170 124 245 128 320 84 S462 38 540 98" fill="none" stroke="#9fb5cf" stroke-width="6" stroke-linecap="round"/>
+  <text x="320" y="101" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="800" letter-spacing="7" fill="#31425e">LOCAL FIRST</text>
+</svg>

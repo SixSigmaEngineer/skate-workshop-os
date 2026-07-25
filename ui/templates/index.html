@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}All entries{% endblock %}
+{% block content %}
+<section class="pagehead library-head">
+  <div>
+    <h1>All entries</h1>
+    <p class="muted">{{ total }} conversations in the vault, sorted by date.</p>
+  </div>
+  <a class="button primary" href="/new">New Note</a>
+</section>
+
+<section>
+  <div class="entry-list">
+    {% for entry in entries %}
+      <article class="entry-card">
+        <div class="entry-meta-row">
+          <span class="type-pill type-{{ entry.entry_type }}">{{ entry.type_label }}</span>
+          {% if entry.session %}<span class="session-pill">{{ entry.session_display }}</span>{% endif %}
+          <time>{{ entry.date }}</time>
+        </div>
+        <div class="entry-body">
+          <a class="item-title" href="/entry/{{ entry.file_id }}">{{ entry.title }}</a>
+          <p>{{ entry.summary }}</p>
+          <div class="chips">
+            {% for tag in entry.tags[:6] %}<span>#{{ tag }}</span>{% endfor %}
+          </div>
+        </div>
+      </article>
+    {% else %}
+      <p class="muted">No entries yet. Use New Note to add the first entry.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

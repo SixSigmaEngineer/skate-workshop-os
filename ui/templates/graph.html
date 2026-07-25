@@ -1,0 +1,1432 @@
+{% extends "base.html" %}
+{% block title %}Grind{% endblock %}
+{% block content %}
+<style>
+.grind-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; }
+.seg-toggle { display:inline-flex; border:1px solid #cdd7e2; border-radius:9px; overflow:hidden; }
+.seg-toggle .seg-btn { border:0; background:#fff; color:#445673; padding:8px 22px; font:inherit; font-weight:500; cursor:pointer; }
+.seg-toggle .seg-btn.active { background:#3f5d86; color:#fff; }
+.grind-controls .chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:#445673; cursor:pointer; user-select:none; }
+.map-panel { position:relative; }
+.grind-labels { position:absolute; left:0; top:0; pointer-events:none; z-index:2; }
+.map-controls-hint { position:absolute; left:0; right:0; bottom:8px; text-align:center; font-size:12px; color:#8696a8; pointer-events:none; z-index:3; }
+.legend-item { cursor:pointer; user-select:none; border-radius:6px; padding:1px 4px; transition:opacity .12s; }
+.legend-item:hover { background:#f3f7fb; }
+.legend-item.dimmed { opacity:.35; }
+.legend-reset { margin-top:8px; font-size:12px; color:#2f5f97; background:none; border:0; cursor:pointer; padding:2px 0; text-decoration:underline; }
+.grind-callout { position:absolute; left:50%; top:14px; transform:translateX(-50%); max-width:78%; z-index:4; background:#111820; color:#fff; border-radius:10px; padding:8px 14px; box-shadow:0 8px 22px rgba(20,32,45,.22); pointer-events:none; transition:opacity .2s; }
+.grind-callout .gc-type { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#9db4cf; }
+.grind-callout .gc-title { font-size:14px; font-weight:600; margin-top:1px; }
+.grind-callout .gc-themes { font-size:11px; color:#aebfce; margin-top:2px; }
+.grind-callout.hidden { opacity:0; }
+.mind-map text { paint-order:stroke; stroke:#ffffff; stroke-width:3px; stroke-linejoin:round; }
+.mind-map .node-type { stroke:none; font-weight:750; }
+.grind-loading { position:fixed; inset:0; z-index:50; background:rgba(17,24,32,.55); display:flex; align-items:center; justify-content:center; }
+.grind-loading.hidden { display:none; }
+.gl-card { background:#fff; border-radius:14px; padding:26px 30px; width:min(460px, calc(100vw - 48px)); text-align:center; box-shadow:0 18px 50px rgba(20,32,45,.3); }
+.gl-spinner { width:42px; height:42px; margin:0 auto 16px; border:4px solid #e2e8f0; border-top-color:#3f5d86; border-radius:50%; animation:glspin .8s linear infinite; }
+@keyframes glspin { to { transform:rotate(360deg); } }
+.gl-title { font-size:17px; font-weight:600; color:#1f2d3d; }
+.gl-sub { font-size:13px; color:#5f7088; margin-top:8px; line-height:1.5; }
+.gl-progress-meta { display:flex; justify-content:space-between; align-items:baseline; gap:16px; margin-top:20px; color:#445673; font-size:12px; text-align:left; }
+.gl-progress-meta strong { color:#2f527f; font-size:13px; white-space:nowrap; }
+.gl-progress-track { height:10px; margin-top:7px; overflow:hidden; border-radius:999px; background:#e4eaf1; box-shadow:inset 0 1px 2px rgba(20,32,45,.08); }
+.gl-progress-fill { width:6%; height:100%; border-radius:inherit; background:linear-gradient(90deg, #3f5d86, #6689b8); transition:width .45s ease; position:relative; }
+.gl-progress-fill::after { content:""; position:absolute; inset:0; background:linear-gradient(100deg, transparent 25%, rgba(255,255,255,.45) 50%, transparent 75%); animation:glshimmer 1.25s linear infinite; }
+@keyframes glshimmer { from { transform:translateX(-100%); } to { transform:translateX(100%); } }
+.gl-elapsed { margin-top:7px; color:#78879a; font-size:11px; }
+</style>
+<div id="grindLoading" class="grind-loading hidden">
+  <div class="gl-card">
+    <div class="gl-spinner"></div>
+    <div class="gl-title">Generating IDEO outputs…</div>
+    <div class="gl-sub">SKATE is reading every active note in this session and synthesizing pain points, How-Might-We prompts, and solution starters. With a higher-quality model this can take up to a minute or two — please keep this window open.</div>
+    <div class="gl-progress-meta">
+      <span id="grindProgressStage">Preparing session notes…</span>
+      <strong id="grindProgressPercent">6% estimated</strong>
+    </div>
+    <div class="gl-progress-track" role="progressbar" aria-label="Estimated Grind progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="6" id="grindProgressTrack">
+      <div class="gl-progress-fill" id="grindProgressFill"></div>
+    </div>
+    <div class="gl-elapsed" id="grindElapsed">Working for 0 seconds</div>
+  </div>
+</div>
+<section class="pagehead grind-head">
+  <div>
+    <p class="eyebrow">GRIND</p>
+    <h1>The Grind</h1>
+    <p class="muted">Skate the rails between memory objects, themes, and workshop signals.</p>
+  </div>
+  <div class="toolbar">
+    <a class="button" href="/spotter{% if filters.session %}?session={{ filters.session }}{% endif %}"><img class="button-icon" src="/static/icons/spotter.svg" alt="">Spotter</a>
+    <a class="button" href="/new"><img class="button-icon" src="/static/icons/new.svg" alt="">New Note</a>
+    {% if grind_run %}
+      <a class="button" href="{{ export_url }}"><img class="button-icon" src="/static/icons/export.svg" alt="">Export IDEO Excel</a>
+    {% endif %}
+  </div>
+</section>
+
+<form id="grindFilters" class="filters grind-filters" method="get" action="/grind">
+  <select name="session" id="grindSession">
+    <option value="">All sessions — combined active graph</option>
+    {% for row in sessions %}
+      <option value="{{ row.key }}" {% if filters.session == row.key %}selected{% endif %}>{{ row.label }}</option>
+    {% endfor %}
+  </select>
+  <input name="entry_type" type="hidden" value="">
+  <input name="date_from" type="date" value="{{ filters.date_from }}">
+  <input name="date_to" type="date" value="{{ filters.date_to }}">
+  <input id="grindRunField" name="run" type="hidden" value="true" disabled>
+  <button class="button primary" type="submit"><img class="button-icon" src="/static/icons/fit.svg" alt="">Apply</button>
+  <a class="button" href="/grind">Clear</a>
+</form>
+
+<p class="muted grind-scope"><strong>Map scope: {{ scope_title }}.</strong> {{ scope_description }}</p>
+
+{% if grind_requires_session %}
+  <p class="notice">Choose a session before running AI synthesis. The map below still shows the current filter scope.</p>
+{% endif %}
+
+<section class="grid stats grind-stats">
+  <div><strong>{{ stats.node_count }}</strong><span>Entries</span></div>
+  <div><strong>{{ stats.edge_count }}</strong><span>Graph links</span></div>
+  <div><strong>{{ stats.relationship_edges | default(0) }}</strong><span>Evidence links</span></div>
+  <div><strong>{{ stats.theme_edges | default(0) }}</strong><span>Theme links</span></div>
+</section>
+
+<section class="grind-workspace">
+  <div class="map-panel">
+    <div class="map-toolbar grind-controls">
+      <div class="seg-toggle">
+        <button class="seg-btn active" type="button" id="view3d">3D</button>
+        <button class="seg-btn" type="button" id="view2d">2D</button>
+      </div>
+      <button class="button primary" type="button" id="startGrind">Start the Grind</button>
+      <button class="button" type="button" id="bailGrind">Bail</button>
+      <button class="button" type="button" id="fitMap">Fit</button>
+      <button class="button" type="button" id="zoomOutMap" title="Zoom farther out">Zoom −</button>
+      <button class="button" type="button" id="zoomInMap" title="Zoom farther in">Zoom +</button>
+      <label class="chk"><input type="checkbox" id="toggleRelated" checked> Related rails</label>
+      <label class="chk"><input type="checkbox" id="toggleThemeRails" checked> Theme rails</label>
+      <label class="chk"><input type="checkbox" id="togglePhysics" checked> Physics</label>
+      <label class="chk"><input type="checkbox" id="toggleLabels" checked> Labels</label>
+      <span class="muted" id="mapStatus">{% if filters.session %}Ready to grind this session.{% else %}Choose a session for focused IDEO synthesis; the map can still be explored now.{% endif %}</span>
+    </div>
+    <canvas id="grind3d" class="grind-3d" style="display:block" aria-label="3D SKATE Grind session map"></canvas>
+    <canvas id="grindLabels" class="grind-labels"></canvas>
+    <svg id="mindMap" class="mind-map" style="display:none" role="img" aria-label="SKATE Grind mind map"></svg>
+    <div class="map-controls-hint" id="mapControlsHint">Left-click: rotate · Scroll: zoom · Right-click: pan</div>
+    <div id="grindSkater" class="grind-skater hidden" aria-hidden="true">
+      <span class="skater-deck"></span>
+      <span class="skater-side"></span>
+      <span class="skater-truck truck-front"></span>
+      <span class="skater-truck truck-back"></span>
+      <span class="skater-wheel wheel-front-left"></span>
+      <span class="skater-wheel wheel-front-right"></span>
+      <span class="skater-wheel wheel-back-left"></span>
+      <span class="skater-wheel wheel-back-right"></span>
+    </div>
+    <div id="mapTooltip" class="map-tooltip hidden" style="z-index:5"></div>
+    <div id="grindCallout" class="grind-callout hidden"></div>
+  </div>
+
+  <aside class="legend-panel">
+    <h2>Legend</h2>
+    <div class="legend-list" id="legendList">
+      {% for item in legend %}
+        <span class="legend-item" data-type="{{ item.letter }}" title="Click to show only this type"><i style="background: {{ item.color }}"></i>{{ item.label }}</span>
+      {% endfor %}
+    </div>
+    <button type="button" id="legendReset" class="legend-reset" style="display:none">Show all types</button>
+    <h2>Selected</h2>
+    <div id="selectedNode" class="selected-node muted">Click a node to inspect it.</div>
+  </aside>
+</section>
+
+{% if grind_run %}
+  <section class="pagehead grind-output-head">
+    <div>
+      <p class="eyebrow">IDEO outputs</p>
+      <h2>Generated workshop synthesis</h2>
+      <p class="muted">IDEO outputs apply a design-thinking lens to this session. SKATE reads every note and distills it into three columns: <strong>Pain Points</strong> (what's broken for users), <strong>How Might We</strong> prompts (reframes that open up ideas), and <strong>Solution Starters</strong> (concrete moves to try). The cards below are the <strong>top 3 of each</strong> — click <strong>Export IDEO Excel</strong> for the full ranked list.</p>
+      <p class="muted">Generated using {{ insights.mode }} synthesis.</p>
+      {% if insights.marker_counts %}
+        <p class="muted"><strong>Capture signals read:</strong>
+          {{ insights.marker_counts.pain }} pains ·
+          {{ insights.marker_counts.observation }} observations ·
+          {{ insights.marker_counts.question }} questions ·
+          {{ insights.marker_counts.insight }} insights ·
+          {{ insights.marker_counts.solution }} solutions ·
+          {{ insights.marker_counts.recommendation }} recommendations ·
+          {{ insights.marker_counts.action }} actions
+        </p>
+      {% endif %}
+      {% if insights.error %}<p class="notice">{{ insights.error }} — SKATE fell back to fast local synthesis, so these results are still usable. (The cloud AI model timed out; press Start the Grind again to retry the AI pass.)</p>{% endif %}
+    </div>
+    <a class="button primary" href="{{ export_url }}"><img class="button-icon" src="/static/icons/export.svg" alt="">Export IDEO Excel</a>
+  </section>
+
+  <section class="grind-output">
+    <article class="panel">
+      <h2>Pain Points</h2>
+      {% for item in insights.pains[:3] %}
+        <div class="insight-card">
+          <strong>{{ item.title }}</strong>
+          <p>{{ item.summary }}</p>
+          <div class="toolbar">
+            {% if item.source_url %}<a class="button" href="{{ item.source_url }}"><img class="button-icon" src="/static/icons/open.svg" alt="">Open</a>{% endif %}
+          </div>
+        </div>
+      {% else %}
+        <p class="muted">No pain points found in this session yet.</p>
+      {% endfor %}
+    </article>
+    <article class="panel">
+      <h2>How Might We</h2>
+      {% for item in insights.hmw_prompts[:3] %}
+        <div class="insight-card">
+          <strong>{{ item.prompt }}</strong>
+          <p>{{ item.source_title }}</p>
+        </div>
+      {% else %}
+        <p class="muted">No HMW prompts found in this session yet.</p>
+      {% endfor %}
+    </article>
+    <article class="panel">
+      <h2>Solution Starters</h2>
+      {% for item in insights.solutions[:3] %}
+        <div class="insight-card">
+          <strong>{{ item.title }}</strong>
+          <p>{{ item.summary }}</p>
+          <div class="toolbar">
+            {% if item.source_url %}<a class="button" href="{{ item.source_url }}"><img class="button-icon" src="/static/icons/open.svg" alt="">Open</a>{% endif %}
+          </div>
+        </div>
+      {% else %}
+        <p class="muted">No solution starters found in this session yet.</p>
+      {% endfor %}
+    </article>
+  </section>
+{% else %}
+  <section class="panel grind-output-prompt">
+    <p class="eyebrow">IDEO outputs</p>
+    <h2>Select a session, then start the GRIND</h2>
+    <p class="muted">GRIND applies a design-thinking lens to a session's notes and distills them into three columns — <strong>Pain Points</strong>, <strong>How Might We</strong> prompts, and <strong>Solution Starters</strong> — showing the top 3 of each, with a full ranked list available via Excel export. Pick a session above and press <strong>Start the Grind</strong> to generate them.</p>
+  </section>
+{% endif %}
+
+<script>
+const graphData = {{ graph_json | safe }};
+const svg = document.getElementById("mindMap");
+const canvas = document.getElementById("grind3d");
+const gl = canvas.getContext("webgl", { antialias: true, alpha: false });
+const selected = document.getElementById("selectedNode");
+const statusLine = document.getElementById("mapStatus");
+const mapTooltip = document.getElementById("mapTooltip");
+const grindCallout = document.getElementById("grindCallout");
+let lastGrindNode = "";
+const labelCanvas = document.getElementById("grindLabels");
+let labelCtx = null;
+const grindSkater = document.getElementById("grindSkater");
+const grindFilters = document.getElementById("grindFilters");
+const grindRunField = document.getElementById("grindRunField");
+const loadedSession = "{{ filters.session }}";
+const pageGeneratedGrind = {% if grind_run %}true{% else %}false{% endif %};
+let showLabels = true;
+let showThemes = false;
+let paused = false;
+let physics = true;
+let showRelatedRails = true;
+let showThemeRails = true;
+let activeTypes = new Set();
+function nodeVisible(node) {
+  return activeTypes.size === 0 || (node && activeTypes.has(node.entry_type));
+}
+let view = { x: 0, y: 0, scale: 1 };
+let dragNode = null;
+let pan2d = { active: false, x: 0, y: 0, viewX: 0, viewY: 0, moved: false };
+let mode = "3d";
+let orbit = { yaw: -0.55, pitch: 0.42, zoom: 760 };
+let pointer = { active: false, x: 0, y: 0 };
+let hitNodes = [];
+let hoverNodeId = "";
+let grinding = pageGeneratedGrind;
+let grindStartedAt = performance.now();
+let orbitAuto = pageGeneratedGrind;
+
+const width = 1000;
+const height = 620;
+svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+const nodeMap = new Map(graphData.nodes.map((node, index) => {
+  const angle = (Math.PI * 2 * index) / Math.max(1, graphData.nodes.length);
+  return [node.id, {
+    ...node,
+    x: width / 2 + Math.cos(angle) * 230,
+    y: height / 2 + Math.sin(angle) * 200,
+    z: Math.sin(angle * 1.7) * 170 + (index % 3 - 1) * 55,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+  }];
+}));
+const nodes = [...nodeMap.values()];
+const edges = graphData.edges.filter((edge) => nodeMap.has(edge.from) && nodeMap.has(edge.to));
+const skatePath = edges.length
+  ? edges.map((edge) => [edge.from, edge.to]).flat()
+  : nodes.map((node) => node.id);
+
+function esc(value) {
+  return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+}
+
+function shortLabel(value, limit = 26) {
+  const text = String(value || "").trim();
+  return text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`;
+}
+
+function compactNodeType(value) {
+  const label = String(value || "").trim();
+  const compact = {
+    "Action Item": "Action",
+    "Decision": "Dec.",
+    "Hypothesis": "Hyp.",
+    "Observation": "Obs.",
+    "Open Question": "Question",
+    "Opportunity": "Opp.",
+    "Recommendation": "Rec.",
+    "Solution": "Sol.",
+  };
+  return compact[label] || shortLabel(label, 8);
+}
+
+function nodeTextColor(color) {
+  const value = String(color || "#5f7898").replace("#", "");
+  const full = value.length === 3 ? value.split("").map((char) => char + char).join("") : value;
+  const channels = [0, 2, 4].map((offset) => parseInt(full.slice(offset, offset + 2), 16) / 255)
+    .map((channel) => channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4));
+  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  return luminance > 0.179 ? "#172333" : "#ffffff";
+}
+
+function edgeColor(edge) {
+  if (edge.shared) return "#d7a594";              // theme rails — soft coral
+  if (edge.type === "contradicts") return "#c0564e";
+  if (edge.type === "causes" || edge.type === "leads_to") return "#cf8b76";
+  return "#c8806e";                               // related rails — coral
+}
+function railVisible(edge) {
+  return edge.shared ? showThemeRails : showRelatedRails;
+}
+
+function setMapMode(nextMode) {
+  mode = nextMode;
+  const is3d = mode === "3d";
+  canvas.style.display = is3d ? "block" : "none";
+  svg.style.display = is3d ? "none" : "block";
+  canvas.classList.toggle("hidden", !is3d);
+  svg.classList.toggle("hidden", is3d);
+  mapTooltip.classList.add("hidden");
+  if (!is3d) grindSkater.classList.add("hidden");
+  if (labelCanvas) labelCanvas.style.display = is3d ? "block" : "none";
+  const hint = document.getElementById("mapControlsHint");
+  if (hint) hint.style.display = is3d ? "block" : "none";
+  if (!is3d && labelCtx && labelCanvas) labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+  document.getElementById("view3d").classList.toggle("active", is3d);
+  document.getElementById("view2d").classList.toggle("active", !is3d);
+}
+
+function tick() {
+  if (!paused && physics) {
+    if (grinding && orbitAuto && mode === "3d") {
+      orbit.yaw += 0.0024;
+      orbit.pitch = 0.36 + Math.sin(performance.now() / 1800) * 0.08;
+    }
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let dist2 = dx * dx + dy * dy || 1;
+        const force = 1700 / dist2;
+        a.vx += dx * force;
+        a.vy += dy * force;
+        a.vz += ((a.z - b.z) || 1) * force * 0.18;
+        b.vx -= dx * force;
+        b.vy -= dy * force;
+        b.vz -= ((a.z - b.z) || 1) * force * 0.18;
+      }
+    }
+    for (const edge of edges) {
+      if (!railVisible(edge)) continue;
+      const a = nodeMap.get(edge.from), b = nodeMap.get(edge.to);
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dz = b.z - a.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      const target = edge.type === "similar_to" ? 150 : 115;
+      const force = (dist - target) * 0.008;
+      a.vx += (dx / dist) * force;
+      a.vy += (dy / dist) * force;
+      a.vz += (dz / dist) * force;
+      b.vx -= (dx / dist) * force;
+      b.vy -= (dy / dist) * force;
+      b.vz -= (dz / dist) * force;
+    }
+    for (const node of nodes) {
+      if (node === dragNode) continue;
+      node.vx += (width / 2 - node.x) * 0.002;
+      node.vy += (height / 2 - node.y) * 0.002;
+      node.vz += (0 - node.z) * 0.002;
+      node.vx *= 0.82;
+      node.vy *= 0.82;
+      node.vz *= 0.82;
+      node.x = Math.max(90, Math.min(width - 90, node.x + node.vx));
+      node.y = Math.max(72, Math.min(height - 72, node.y + node.vy));
+      node.z = Math.max(-320, Math.min(320, node.z + node.vz));
+    }
+  }
+  updateGrindInfo();
+  render2d();
+  render3d();
+  requestAnimationFrame(tick);
+}
+
+function render2d() {
+  if (mode !== "2d") return;
+  const occupied = [];
+  const overlaps = (box) => occupied.some((other) => !(
+    box.right + 5 < other.left || box.left - 5 > other.right ||
+    box.bottom + 4 < other.top || box.top - 4 > other.bottom
+  ));
+  const visibleNodes = nodes.filter(nodeVisible);
+  visibleNodes.forEach((node) => {
+    const radius = Math.min(30, 14 + Number(node.value || 1) * 2);
+    occupied.push({ left: node.x - radius, right: node.x + radius, top: node.y - radius, bottom: node.y + radius });
+  });
+  const nodeLabels = new Map();
+  if (showLabels) {
+    [...visibleNodes]
+      .sort((a, b) => Number(b.value || 1) - Number(a.value || 1))
+      .forEach((node) => {
+        const radius = Math.min(30, 14 + Number(node.value || 1) * 2);
+        const text = shortLabel(node.title_full);
+        const labelWidth = Math.max(42, text.length * 6.2);
+        const y = node.y - radius - 9;
+        const box = { left: node.x - labelWidth / 2, right: node.x + labelWidth / 2, top: y - 12, bottom: y + 3 };
+        if (!overlaps(box)) {
+          occupied.push(box);
+          nodeLabels.set(node.id, { text, y });
+        }
+      });
+  }
+  const edgeMarkup = edges.map((edge) => {
+    const a = nodeMap.get(edge.from), b = nodeMap.get(edge.to);
+    if (!a || !b || !railVisible(edge) || !nodeVisible(a) || !nodeVisible(b)) return "";
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dash = edge.dashes ? "6 5" : "";
+    let label = "";
+    if (showLabels && edge.label) {
+      const text = shortLabel(edge.label, 20);
+      const labelWidth = Math.max(30, text.length * 5.5);
+      const y = my - 4;
+      const box = { left: mx - labelWidth / 2, right: mx + labelWidth / 2, top: y - 10, bottom: y + 2 };
+      if (!overlaps(box)) {
+        occupied.push(box);
+        label = `<text class="edge-label" x="${mx}" y="${y}">${esc(text)}</text>`;
+      }
+    }
+    return `<line class="map-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${edgeColor(edge)}" stroke-dasharray="${dash}"></line>${label}`;
+  }).join("");
+  const nodeMarkup = nodes.map((node) => {
+    if (!nodeVisible(node)) return "";
+    const radius = Math.min(30, 14 + Number(node.value || 1) * 2);
+    const themes = showThemes && node.themes ? `<text class="node-themes" x="${node.x}" y="${node.y + radius + 22}">${esc(node.themes.slice(0, 2).join(" / "))}</text>` : "";
+    const labelInfo = nodeLabels.get(node.id);
+    const label = labelInfo ? `<text class="node-label" x="${node.x}" y="${labelInfo.y}">${esc(labelInfo.text)}</text>` : "";
+    return `<g class="map-node" data-id="${esc(node.id)}">
+      ${label}
+      <circle cx="${node.x}" cy="${node.y}" r="${radius}" fill="${node.color}"></circle>
+      <text class="node-type" x="${node.x}" y="${node.y + 4}" fill="${nodeTextColor(node.color)}">${esc(compactNodeType(node.type_label))}</text>
+      ${themes}
+    </g>`;
+  }).join("");
+  let skaterMarkup = "";
+  if (grinding && skatePath.length >= 2) {
+    const step = (performance.now() - grindStartedAt) / 1000 * 0.55;
+    const i = Math.floor(step) % skatePath.length, j = (i + 1) % skatePath.length;
+    const A = nodeMap.get(skatePath[i]), B = nodeMap.get(skatePath[j]);
+    if (A && B) {
+      const t = step - Math.floor(step);
+      const sx = A.x + (B.x - A.x) * t;
+      const sy = A.y + (B.y - A.y) * t - Math.sin(t * Math.PI) * 26;
+      const w = 58, h = w * 438 / 612;
+      skaterMarkup = `<image href="/static/skateboard-2d.png" x="${sx - w / 2}" y="${sy - h / 2}" width="${w}" height="${h}"></image>`;
+    }
+  }
+  svg.innerHTML = `<g transform="translate(${view.x} ${view.y}) scale(${view.scale})">${edgeMarkup}${nodeMarkup}${skaterMarkup}</g>`;
+}
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const nextWidth = Math.max(320, Math.floor(rect.width * dpr));
+  const nextHeight = Math.max(320, Math.floor(rect.height * dpr));
+  if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+  }
+  return { w: nextWidth, h: nextHeight, dpr };
+}
+
+function project(node, size) {
+  const cx = node.x - width / 2;
+  const cy = node.y - height / 2;
+  const cz = node.z || 0;
+  const cosY = Math.cos(orbit.yaw), sinY = Math.sin(orbit.yaw);
+  const cosP = Math.cos(orbit.pitch), sinP = Math.sin(orbit.pitch);
+  const x1 = cx * cosY - cz * sinY;
+  const z1 = cx * sinY + cz * cosY;
+  const y1 = cy * cosP - z1 * sinP;
+  const z2 = cy * sinP + z1 * cosP;
+  const perspective = orbit.zoom / Math.max(120, orbit.zoom + z2);
+  return {
+    x: size.w / 2 + x1 * perspective,
+    y: size.h / 2 + y1 * perspective,
+    z: z2,
+    scale: perspective,
+  };
+}
+
+function drawLabel(text, x, y, size, fill) {
+  ctx.font = `500 ${size}px Segoe UI, Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(255,255,255,.9)";
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = fill;
+  ctx.fillText(text, x, y);
+}
+
+function hexToRgb(hex) {
+  const value = String(hex || "#5f7898").replace("#", "");
+  const full = value.length === 3 ? value.split("").map((char) => char + char).join("") : value;
+  const number = parseInt(full.slice(0, 6), 16);
+  return {
+    r: (number >> 16) & 255,
+    g: (number >> 8) & 255,
+    b: number & 255,
+  };
+}
+
+function rgba(hex, alpha) {
+  const c = hexToRgb(hex);
+  return `rgba(${c.r},${c.g},${c.b},${alpha})`;
+}
+
+function drawRail(a, b, edge) {
+  const depthScale = Math.max(0.55, Math.min(1.35, (a.scale + b.scale) / 2));
+  const color = edgeColor(edge);
+  const width = Math.max(1.2, 3.4 * depthScale);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.setLineDash([]);
+
+  ctx.globalAlpha = edge.type === "similar_to" ? 0.12 : 0.22;
+  ctx.strokeStyle = "#152235";
+  ctx.lineWidth = width + 5;
+  ctx.beginPath();
+  ctx.moveTo(a.x + 1.8 * depthScale, a.y + 2.4 * depthScale);
+  ctx.lineTo(b.x + 1.8 * depthScale, b.y + 2.4 * depthScale);
+  ctx.stroke();
+
+  ctx.globalAlpha = edge.type === "similar_to" ? 0.18 : 0.46;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  if (edge.dashes || edge.type === "similar_to") ctx.setLineDash([10 * depthScale, 9 * depthScale]);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+  ctx.globalAlpha = edge.type === "similar_to" ? 0.08 : 0.26;
+  ctx.strokeStyle = "rgba(255,255,255,.88)";
+  ctx.lineWidth = Math.max(0.8, width * 0.35);
+  ctx.beginPath();
+  ctx.moveTo(a.x - 1.2 * depthScale, a.y - 1.4 * depthScale);
+  ctx.lineTo(b.x - 1.2 * depthScale, b.y - 1.4 * depthScale);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSphere(node, p, radius, isHover) {
+  const color = node.color || "#5f7898";
+  ctx.save();
+  ctx.globalAlpha = Math.max(0.46, Math.min(1, p.scale * 0.9));
+
+  ctx.fillStyle = "rgba(18,28,43,.18)";
+  ctx.beginPath();
+  ctx.ellipse(p.x + radius * .34, p.y + radius * 1.18, radius * .88, radius * .24, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+  ctx.clip();
+
+  const body = ctx.createRadialGradient(
+    p.x - radius * .42,
+    p.y - radius * .48,
+    radius * .08,
+    p.x + radius * .12,
+    p.y + radius * .18,
+    radius * 1.15
+  );
+  body.addColorStop(0, "rgba(255,255,255,.98)");
+  body.addColorStop(0.16, rgba(color, .98));
+  body.addColorStop(0.58, rgba(color, .92));
+  body.addColorStop(1, "rgba(15,23,36,.95)");
+  ctx.fillStyle = body;
+  ctx.fillRect(p.x - radius, p.y - radius, radius * 2, radius * 2);
+
+  const shade = ctx.createLinearGradient(p.x - radius, p.y - radius, p.x + radius, p.y + radius);
+  shade.addColorStop(0, "rgba(255,255,255,.14)");
+  shade.addColorStop(0.55, "rgba(255,255,255,0)");
+  shade.addColorStop(1, "rgba(0,0,0,.38)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(p.x - radius, p.y - radius, radius * 2, radius * 2);
+
+  const shine = ctx.createRadialGradient(
+    p.x - radius * .38,
+    p.y - radius * .44,
+    0,
+    p.x - radius * .38,
+    p.y - radius * .44,
+    radius * .42
+  );
+  shine.addColorStop(0, "rgba(255,255,255,.95)");
+  shine.addColorStop(0.34, "rgba(255,255,255,.42)");
+  shine.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = shine;
+  ctx.beginPath();
+  ctx.ellipse(p.x - radius * .34, p.y - radius * .42, radius * .32, radius * .22, -0.55, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+  ctx.save();
+  ctx.lineWidth = isHover ? 3.5 : 1.8;
+  ctx.strokeStyle = isHover ? "rgba(18,31,52,.82)" : "rgba(255,255,255,.88)";
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  if (isHover) {
+    ctx.globalAlpha = 0.32;
+    ctx.strokeStyle = rgba(color, .9);
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius + 4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawDeck(x, y, angle, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(8,14,24,.22)";
+  ctx.beginPath();
+  ctx.ellipse(8, 23, 58, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#111827";
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.roundRect(-58, -14, 116, 28, 16);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "#496796";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-34, 0);
+  ctx.lineTo(34, 0);
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(-33, 21, 8, 0, Math.PI * 2);
+  ctx.arc(33, 21, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#111827";
+  ctx.beginPath();
+  ctx.arc(-33, 21, 4, 0, Math.PI * 2);
+  ctx.arc(33, 21, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSkateboard(size, projected) {
+  if (!grinding || skatePath.length < 2) return;
+  const elapsed = (performance.now() - grindStartedAt) / 1000;
+  const step = elapsed * 0.72;
+  const index = Math.floor(step) % skatePath.length;
+  const nextIndex = (index + 1) % skatePath.length;
+  const a = projected.get(skatePath[index]);
+  const b = projected.get(skatePath[nextIndex]);
+  if (!a || !b) return;
+  const t = step - Math.floor(step);
+  const x = a.x + (b.x - a.x) * t;
+  const yBase = a.y + (b.y - a.y) * t;
+  const jump = Math.sin(t * Math.PI) * 58 * size.dpr;
+  const y = yBase - jump;
+  const angle = Math.atan2(b.y - a.y, b.x - a.x) + Math.sin(elapsed * 7) * 0.08;
+  const scale = Math.max(.45, Math.min(1.15, ((a.scale + b.scale) / 2) * size.dpr));
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.strokeStyle = "#3f6596";
+  ctx.lineWidth = 3 * size.dpr;
+  ctx.setLineDash([10 * size.dpr, 8 * size.dpr]);
+  ctx.beginPath();
+  ctx.arc(x, yBase - 16 * size.dpr, Math.max(26, jump * .55), Math.PI * 1.1, Math.PI * 1.9);
+  ctx.stroke();
+  ctx.restore();
+  drawDeck(x, y, angle, scale);
+}
+
+function updateSkateboardOverlay(projected) {
+  if (!grinding || mode !== "3d" || skatePath.length < 2) {
+    grindSkater.classList.add("hidden");
+    return;
+  }
+  const elapsed = (performance.now() - grindStartedAt) / 1000;
+  const step = elapsed * 0.78;
+  const index = Math.floor(step) % skatePath.length;
+  const nextIndex = (index + 1) % skatePath.length;
+  const a = projected.get(skatePath[index]);
+  const b = projected.get(skatePath[nextIndex]);
+  if (!a || !b) {
+    grindSkater.classList.add("hidden");
+    return;
+  }
+  const t = step - Math.floor(step);
+  const jump = Math.sin(t * Math.PI) * 58;
+  const x = a.x + (b.x - a.x) * t;
+  const y = a.y + (b.y - a.y) * t - jump;
+  const angle = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+  const scale = Math.max(.7, Math.min(1.35, ((a.scale + b.scale) / 2)));
+  grindSkater.style.left = `${canvas.offsetLeft + x}px`;
+  grindSkater.style.top = `${canvas.offsetTop + y}px`;
+  grindSkater.style.transform = `translate(-50%, -50%) rotate(${angle}deg) scale(${scale})`;
+  grindSkater.classList.remove("hidden");
+}
+
+let webglState = null;
+
+function makeShader(type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(shader));
+  }
+  return shader;
+}
+
+function makeProgram(vertexSource, fragmentSource) {
+  const program = gl.createProgram();
+  gl.attachShader(program, makeShader(gl.VERTEX_SHADER, vertexSource));
+  gl.attachShader(program, makeShader(gl.FRAGMENT_SHADER, fragmentSource));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program));
+  }
+  return program;
+}
+
+function mat4Multiply(a, b) {
+  const out = new Float32Array(16);
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 4; col++) {
+      out[col * 4 + row] =
+        a[0 * 4 + row] * b[col * 4 + 0] +
+        a[1 * 4 + row] * b[col * 4 + 1] +
+        a[2 * 4 + row] * b[col * 4 + 2] +
+        a[3 * 4 + row] * b[col * 4 + 3];
+    }
+  }
+  return out;
+}
+
+function perspectiveMatrix(fov, aspect, near, far) {
+  const f = 1 / Math.tan(fov / 2);
+  const nf = 1 / (near - far);
+  return new Float32Array([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, (2 * far * near) * nf, 0,
+  ]);
+}
+
+function translateMatrix(x, y, z) {
+  return new Float32Array([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    x, y, z, 1,
+  ]);
+}
+
+function rotateXMatrix(angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return new Float32Array([
+    1, 0, 0, 0,
+    0, c, s, 0,
+    0, -s, c, 0,
+    0, 0, 0, 1,
+  ]);
+}
+
+function rotateYMatrix(angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return new Float32Array([
+    c, 0, -s, 0,
+    0, 1, 0, 0,
+    s, 0, c, 0,
+    0, 0, 0, 1,
+  ]);
+}
+
+function webglMatrix(size) {
+  const projection = perspectiveMatrix(Math.PI / 4.4, size.w / size.h, 8, 4200);
+  const view = mat4Multiply(
+    translateMatrix(0, 0, -orbit.zoom),
+    mat4Multiply(rotateXMatrix(orbit.pitch), rotateYMatrix(orbit.yaw))
+  );
+  return mat4Multiply(projection, view);
+}
+
+function nodePosition(node) {
+  return [
+    node.x - width / 2,
+    -(node.y - height / 2),
+    node.z || 0,
+  ];
+}
+
+function pushSphere(data, center, radius, color, hover) {
+  const latSteps = 10;
+  const lonSteps = 14;
+  function unit(lat, lon) {
+    const theta = (lat / latSteps) * Math.PI;
+    const phi = (lon / lonSteps) * Math.PI * 2;
+    const sx = Math.sin(theta) * Math.cos(phi);
+    const sy = Math.cos(theta);
+    const sz = Math.sin(theta) * Math.sin(phi);
+    return [sx, sy, sz];
+  }
+  function vertex(n) {
+    data.push(
+      center[0] + n[0] * radius,
+      center[1] + n[1] * radius,
+      center[2] + n[2] * radius,
+      n[0],
+      n[1],
+      n[2],
+      color.r / 255,
+      color.g / 255,
+      color.b / 255,
+      hover
+    );
+  }
+  for (let lat = 0; lat < latSteps; lat++) {
+    for (let lon = 0; lon < lonSteps; lon++) {
+      const a = unit(lat, lon);
+      const b = unit(lat + 1, lon);
+      const c = unit(lat + 1, lon + 1);
+      const d = unit(lat, lon + 1);
+      vertex(a); vertex(b); vertex(c);
+      vertex(a); vertex(c); vertex(d);
+    }
+  }
+}
+
+function initWebgl() {
+  if (webglState || !gl) return webglState;
+  const sphereProgram = makeProgram(`
+    attribute vec3 aPosition;
+    attribute vec3 aNormal;
+    attribute vec3 aColor;
+    attribute float aHover;
+    uniform mat4 uMatrix;
+    varying vec3 vNormal;
+    varying vec3 vColor;
+    varying float vHover;
+    void main() {
+      gl_Position = uMatrix * vec4(aPosition, 1.0);
+      vNormal = normalize(aNormal);
+      vColor = aColor;
+      vHover = aHover;
+    }
+  `, `
+    precision mediump float;
+    varying vec3 vNormal;
+    varying vec3 vColor;
+    varying float vHover;
+    void main() {
+      vec3 normal = normalize(vNormal);
+      vec3 light = normalize(vec3(-0.4, 0.7, 0.6));
+      float diffuse = max(dot(normal, light), 0.0);
+      float rim = pow(1.0 - max(normal.z, 0.0), 2.2);
+      vec3 color = vColor * (0.70 + diffuse * 0.34);
+      color = mix(color, vec3(1.0), rim * 0.10);
+      if (vHover > 0.5) color = mix(color, vec3(1.0), 0.16);
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `);
+  const lineProgram = makeProgram(`
+    attribute vec3 aPosition;
+    attribute vec4 aColor;
+    uniform mat4 uMatrix;
+    varying vec4 vColor;
+    void main() {
+      gl_Position = uMatrix * vec4(aPosition, 1.0);
+      vColor = aColor;
+    }
+  `, `
+    precision mediump float;
+    varying vec4 vColor;
+    void main() {
+      gl_FragColor = vColor;
+    }
+  `);
+  webglState = {
+    sphereProgram,
+    lineProgram,
+    sphereBuffer: gl.createBuffer(),
+    lineBuffer: gl.createBuffer(),
+    sphereLocations: {
+      position: gl.getAttribLocation(sphereProgram, "aPosition"),
+      normal: gl.getAttribLocation(sphereProgram, "aNormal"),
+      color: gl.getAttribLocation(sphereProgram, "aColor"),
+      hover: gl.getAttribLocation(sphereProgram, "aHover"),
+      matrix: gl.getUniformLocation(sphereProgram, "uMatrix"),
+    },
+    lineLocations: {
+      position: gl.getAttribLocation(lineProgram, "aPosition"),
+      color: gl.getAttribLocation(lineProgram, "aColor"),
+      matrix: gl.getUniformLocation(lineProgram, "uMatrix"),
+    },
+  };
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  return webglState;
+}
+
+// ── Procedural 3D skateboard that rides the rails during a grind ──
+function _vert(p, n, c) { return [p[0], p[1], p[2], n[0], n[1], n[2], c[0], c[1], c[2], 0]; }
+function _pushTri(out, p0, p1, p2, n, c) { out.push(..._vert(p0, n, c), ..._vert(p1, n, c), ..._vert(p2, n, c)); }
+function _pushBox(out, cx, cy, cz, hx, hy, hz, c) {
+  const v = [
+    [cx-hx,cy-hy,cz-hz],[cx+hx,cy-hy,cz-hz],[cx+hx,cy+hy,cz-hz],[cx-hx,cy+hy,cz-hz],
+    [cx-hx,cy-hy,cz+hz],[cx+hx,cy-hy,cz+hz],[cx+hx,cy+hy,cz+hz],[cx-hx,cy+hy,cz+hz],
+  ];
+  const f = [
+    [4,5,6,7,[0,0,1]],[1,0,3,2,[0,0,-1]],[5,1,2,6,[1,0,0]],
+    [0,4,7,3,[-1,0,0]],[3,2,6,7,[0,1,0]],[4,5,1,0,[0,-1,0]],
+  ];
+  for (const [a,b,d,e,n] of f) { _pushTri(out, v[a],v[b],v[d], n, c); _pushTri(out, v[a],v[d],v[e], n, c); }
+}
+function _pushWheel(out, cx, cy, cz, r, hl, c) {
+  const sides = 8;
+  for (let i=0;i<sides;i++){
+    const a0=i/sides*Math.PI*2, a1=(i+1)/sides*Math.PI*2;
+    const x0=Math.cos(a0)*r, y0=Math.sin(a0)*r, x1=Math.cos(a1)*r, y1=Math.sin(a1)*r;
+    const p00=[cx+x0,cy+y0,cz-hl], p01=[cx+x0,cy+y0,cz+hl], p10=[cx+x1,cy+y1,cz-hl], p11=[cx+x1,cy+y1,cz+hl];
+    const n0=[x0/r,y0/r,0], n1=[x1/r,y1/r,0];
+    out.push(..._vert(p00,n0,c),..._vert(p10,n1,c),..._vert(p11,n1,c));
+    out.push(..._vert(p00,n0,c),..._vert(p11,n1,c),..._vert(p01,n0,c));
+    out.push(..._vert([cx,cy,cz+hl],[0,0,1],c),..._vert(p01,[0,0,1],c),..._vert(p11,[0,0,1],c));
+    out.push(..._vert([cx,cy,cz-hl],[0,0,-1],c),..._vert(p10,[0,0,-1],c),..._vert(p00,[0,0,-1],c));
+  }
+}
+const BOARD_LOCAL = (() => {
+  const out = [];
+  const deck=[0.14,0.14,0.16], truck=[0.55,0.55,0.58], wheel=[0.9,0.9,0.92];
+  _pushBox(out, 0, 0, 0, 22, 1.3, 7, deck);
+  _pushBox(out, 13, -3, 0, 2, 1.5, 5.5, truck);
+  _pushBox(out, -13, -3, 0, 2, 1.5, 5.5, truck);
+  for (const wx of [13,-13]) for (const wz of [6,-6]) _pushWheel(out, wx, -5, wz, 3, 1.3, wheel);
+  return out;
+})();
+function _cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function _norm(v){ const l=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/l,v[1]/l,v[2]/l]; }
+function boardFrame() {
+  if (!grinding || skatePath.length < 2) return null;
+  const step = (performance.now() - grindStartedAt) / 1000 * 0.55;
+  const i = Math.floor(step) % skatePath.length, j = (i+1) % skatePath.length;
+  const A = nodeMap.get(skatePath[i]), B = nodeMap.get(skatePath[j]);
+  if (!A || !B) return null;
+  const a = nodePosition(A), b = nodePosition(B);
+  const t = step - Math.floor(step);
+  const pos = [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t + Math.sin(t*Math.PI)*24, a[2]+(b[2]-a[2])*t];
+  let fwd = _norm([b[0]-a[0], b[1]-a[1], b[2]-a[2]]);
+  if (!isFinite(fwd[0])) fwd = [1,0,0];
+  let right = _cross([0,1,0], fwd);
+  if (Math.hypot(right[0],right[1],right[2]) < 0.001) right = [1,0,0];
+  right = _norm(right);
+  const up = _norm(_cross(fwd, right));
+  return { pos, fwd, up, right };
+}
+function addBoard(data, fr) {
+  const { pos, fwd, up, right } = fr;
+  for (let i=0;i<BOARD_LOCAL.length;i+=10){
+    const lx=BOARD_LOCAL[i],ly=BOARD_LOCAL[i+1],lz=BOARD_LOCAL[i+2];
+    const nx=BOARD_LOCAL[i+3],ny=BOARD_LOCAL[i+4],nz=BOARD_LOCAL[i+5];
+    data.push(
+      pos[0]+lx*fwd[0]+ly*up[0]+lz*right[0],
+      pos[1]+lx*fwd[1]+ly*up[1]+lz*right[1],
+      pos[2]+lx*fwd[2]+ly*up[2]+lz*right[2],
+      nx*fwd[0]+ny*up[0]+nz*right[0],
+      nx*fwd[1]+ny*up[1]+nz*right[1],
+      nx*fwd[2]+ny*up[2]+nz*right[2],
+      BOARD_LOCAL[i+6],BOARD_LOCAL[i+7],BOARD_LOCAL[i+8], 0
+    );
+  }
+}
+
+function render3d() {
+  if (mode !== "3d") return;
+  const size = resizeCanvas();
+  const state = initWebgl();
+  if (!state) {
+    statusLine.textContent = "3D rendering needs WebGL enabled in this browser.";
+    return;
+  }
+  gl.viewport(0, 0, size.w, size.h);
+  gl.clearColor(0.93, 0.96, 0.98, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  const matrix = webglMatrix(size);
+  const projected = new Map(nodes.map((node) => [node.id, project(node, size)]));
+  const focal = 1 / Math.tan((Math.PI / 4.4) / 2);
+  hitNodes = [];
+  for (const node of nodes) {
+    if (!nodeVisible(node)) continue;
+    const sp = projectGL(node, matrix, size);
+    if (!sp) continue;
+    const worldR = Math.max(10, Math.min(28, 11 + Number(node.value || 1) * 2.2));
+    const screenR = Math.max(9, worldR * focal * 0.5 * size.h / sp.w);
+    hitNodes.push({ node, p: { x: sp.x, y: sp.y }, r: screenR, w: sp.w });
+  }
+  hitNodes.sort((a, b) => a.w - b.w);
+  grindSkater.classList.add("hidden");
+
+  const lineData = [];
+  for (const edge of edges) {
+    if (!railVisible(edge)) continue;
+    const aNode = nodeMap.get(edge.from);
+    const bNode = nodeMap.get(edge.to);
+    if (!aNode || !bNode) continue;
+    if (!nodeVisible(aNode) || !nodeVisible(bNode)) continue;
+    const color = hexToRgb(edgeColor(edge));
+    const alpha = edge.type === "similar_to" ? 0.24 : 0.62;
+    const a = nodePosition(aNode);
+    const b = nodePosition(bNode);
+    lineData.push(
+      a[0], a[1], a[2], color.r / 255, color.g / 255, color.b / 255, alpha,
+      b[0], b[1], b[2], color.r / 255, color.g / 255, color.b / 255, alpha
+    );
+  }
+  gl.useProgram(state.lineProgram);
+  gl.uniformMatrix4fv(state.lineLocations.matrix, false, matrix);
+  gl.bindBuffer(gl.ARRAY_BUFFER, state.lineBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lineData), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(state.lineLocations.position);
+  gl.vertexAttribPointer(state.lineLocations.position, 3, gl.FLOAT, false, 28, 0);
+  gl.enableVertexAttribArray(state.lineLocations.color);
+  gl.vertexAttribPointer(state.lineLocations.color, 4, gl.FLOAT, false, 28, 12);
+  gl.lineWidth(1);
+  gl.drawArrays(gl.LINES, 0, lineData.length / 7);
+
+  const sphereData = [];
+  for (const node of nodes) {
+    if (!nodeVisible(node)) continue;
+    const pos = nodePosition(node);
+    const color = hexToRgb(node.color);
+    const radius = Math.max(10, Math.min(28, 11 + Number(node.value || 1) * 2.2));
+    pushSphere(sphereData, pos, node.id === hoverNodeId ? radius * 1.14 : radius, color, node.id === hoverNodeId ? 1 : 0);
+  }
+  gl.useProgram(state.sphereProgram);
+  gl.uniformMatrix4fv(state.sphereLocations.matrix, false, matrix);
+  gl.bindBuffer(gl.ARRAY_BUFFER, state.sphereBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphereData), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(state.sphereLocations.position);
+  gl.vertexAttribPointer(state.sphereLocations.position, 3, gl.FLOAT, false, 40, 0);
+  gl.enableVertexAttribArray(state.sphereLocations.normal);
+  gl.vertexAttribPointer(state.sphereLocations.normal, 3, gl.FLOAT, false, 40, 12);
+  gl.enableVertexAttribArray(state.sphereLocations.color);
+  gl.vertexAttribPointer(state.sphereLocations.color, 3, gl.FLOAT, false, 40, 24);
+  gl.enableVertexAttribArray(state.sphereLocations.hover);
+  gl.vertexAttribPointer(state.sphereLocations.hover, 1, gl.FLOAT, false, 40, 36);
+  gl.drawArrays(gl.TRIANGLES, 0, sphereData.length / 10);
+
+  const fr = boardFrame();
+  if (fr) {
+    const boardData = [];
+    addBoard(boardData, fr);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(boardData), gl.DYNAMIC_DRAW);
+    gl.drawArrays(gl.TRIANGLES, 0, boardData.length / 10);
+  }
+
+  drawLabelsOverlay(size, matrix);
+}
+
+function projectGL(node, m, size) {
+  const x = node.x - width / 2;
+  const y = -(node.y - height / 2);
+  const z = node.z || 0;
+  const cx = m[0] * x + m[4] * y + m[8] * z + m[12];
+  const cy = m[1] * x + m[5] * y + m[9] * z + m[13];
+  const cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+  if (cw <= 0.0001) return null;
+  return { x: (cx / cw * 0.5 + 0.5) * size.w, y: (1 - (cy / cw * 0.5 + 0.5)) * size.h, w: cw };
+}
+
+function drawLabelsOverlay(size, matrix) {
+  if (!labelCanvas) return;
+  if (labelCanvas.width !== size.w || labelCanvas.height !== size.h) {
+    labelCanvas.width = size.w;
+    labelCanvas.height = size.h;
+  }
+  labelCanvas.style.left = canvas.offsetLeft + "px";
+  labelCanvas.style.top = canvas.offsetTop + "px";
+  labelCanvas.style.width = canvas.offsetWidth + "px";
+  labelCanvas.style.height = canvas.offsetHeight + "px";
+  if (!labelCtx) labelCtx = labelCanvas.getContext("2d");
+  labelCtx.clearRect(0, 0, size.w, size.h);
+  if (!showLabels) return;
+  const fontPx = Math.round(11 * size.dpr);
+  labelCtx.font = `500 ${fontPx}px Segoe UI, Arial, sans-serif`;
+  labelCtx.textAlign = "center";
+  labelCtx.textBaseline = "bottom";
+  const items = [];
+  for (const node of nodes) {
+    if (!nodeVisible(node)) continue;
+    const sp = projectGL(node, matrix, size);
+    if (sp) items.push({ node, sp });
+  }
+  items.sort((a, b) => b.sp.w - a.sp.w);
+  const occupied = [];
+  for (const { node, sp } of items) {
+    const text = shortLabel(node.label || node.title_full || "", 24);
+    if (!text) continue;
+    const y = sp.y - 13 * size.dpr;
+    const textWidth = labelCtx.measureText(text).width;
+    const box = {
+      left: sp.x - textWidth / 2 - 4 * size.dpr,
+      right: sp.x + textWidth / 2 + 4 * size.dpr,
+      top: y - fontPx - 3 * size.dpr,
+      bottom: y + 2 * size.dpr,
+    };
+    const collides = occupied.some((other) => !(
+      box.right < other.left || box.left > other.right ||
+      box.bottom < other.top || box.top > other.bottom
+    ));
+    const outside = box.right < 0 || box.left > size.w || box.bottom < 0 || box.top > size.h;
+    if (collides || outside) continue;
+    occupied.push(box);
+    labelCtx.lineWidth = 3 * size.dpr;
+    labelCtx.strokeStyle = "rgba(255,255,255,.9)";
+    labelCtx.strokeText(text, sp.x, y);
+    labelCtx.fillStyle = node.id === hoverNodeId ? "#17324e" : "#405064";
+    labelCtx.fillText(text, sp.x, y);
+  }
+}
+
+function selectNode(id) {
+  const node = nodeMap.get(id);
+  if (!node) return;
+  selected.classList.remove("muted");
+  selected.innerHTML = `<strong>${esc(node.title_full)}</strong>
+    <p>${esc(node.type_label)}${node.session_label ? " / " + esc(node.session_label) : ""}</p>
+    <p>${esc((node.themes || []).join(" / "))}</p>
+    <a class="button primary" href="${node.url}"><img class="button-icon" src="/static/icons/open.svg" alt="">Open Note</a>`;
+}
+
+function showGrindCallout(node) {
+  if (!grindCallout || !node) return;
+  const themes = (node.themes || []).slice(0, 3).join(" · ");
+  grindCallout.innerHTML = `<div class="gc-type">${esc(node.type_label)}</div>` +
+    `<div class="gc-title">${esc(node.title_full)}</div>` +
+    (themes ? `<div class="gc-themes">${esc(themes)}</div>` : "");
+  grindCallout.classList.remove("hidden");
+}
+function updateGrindInfo() {
+  if (!grinding || skatePath.length < 2) {
+    if (grindCallout) grindCallout.classList.add("hidden");
+    lastGrindNode = "";
+    return;
+  }
+  const step = (performance.now() - grindStartedAt) / 1000 * 0.55;
+  const idx = Math.floor(step) % skatePath.length;
+  const nodeId = skatePath[idx];
+  if (nodeId === lastGrindNode) return;
+  lastGrindNode = nodeId;
+  const node = nodeMap.get(nodeId);
+  if (node) { selectNode(nodeId); showGrindCallout(node); }
+}
+
+function hitTestCanvasNode(event) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = canvas.width / rect.width;
+  const x = (event.clientX - rect.left) * dpr;
+  const y = (event.clientY - rect.top) * dpr;
+  for (const { node, p, r } of hitNodes) {
+    if (Math.hypot(x - p.x, y - p.y) <= r + 8) return { node, p, x, y };
+  }
+  return null;
+}
+
+function showTooltip(hit, event) {
+  if (!hit) {
+    hoverNodeId = "";
+    mapTooltip.classList.add("hidden");
+    return;
+  }
+  hoverNodeId = hit.node.id;
+  const themes = hit.node.themes && hit.node.themes.length ? hit.node.themes.slice(0, 3).join(" / ") : "No themes yet";
+  mapTooltip.innerHTML = `<strong>${esc(hit.node.title_full)}</strong>
+    <span>${esc(hit.node.type_label)}${hit.node.session_label ? " · " + esc(hit.node.session_label) : ""}</span>
+    <span>${esc(themes)}</span>${hit.node.date ? `<span>${esc(hit.node.date)}</span>` : ""}`;
+  const panel = canvas.getBoundingClientRect();
+  const x = Math.min(panel.width - 250, Math.max(12, event.clientX - panel.left + 14));
+  const y = Math.min(panel.height - 95, Math.max(58, event.clientY - panel.top + 14));
+  mapTooltip.style.left = `${x}px`;
+  mapTooltip.style.top = `${y}px`;
+  mapTooltip.classList.remove("hidden");
+}
+
+svg.addEventListener("click", (event) => {
+  const group = event.target.closest(".map-node");
+  if (group) selectNode(group.dataset.id);
+});
+svg.addEventListener("pointerdown", (event) => {
+  const group = event.target.closest(".map-node");
+  if (group) {
+    dragNode = nodeMap.get(group.dataset.id);
+    paused = false;
+  } else {
+    pan2d = {
+      active: true,
+      x: event.clientX,
+      y: event.clientY,
+      viewX: view.x,
+      viewY: view.y,
+      moved: false,
+    };
+    svg.classList.add("panning");
+  }
+  svg.setPointerCapture(event.pointerId);
+});
+svg.addEventListener("pointermove", (event) => {
+  const rect = svg.getBoundingClientRect();
+  if (dragNode) {
+    const screenX = ((event.clientX - rect.left) / rect.width) * width;
+    const screenY = ((event.clientY - rect.top) / rect.height) * height;
+    dragNode.x = (screenX - view.x) / view.scale;
+    dragNode.y = (screenY - view.y) / view.scale;
+    dragNode.vx = 0;
+    dragNode.vy = 0;
+    return;
+  }
+  if (pan2d.active) {
+    const dx = ((event.clientX - pan2d.x) / rect.width) * width;
+    const dy = ((event.clientY - pan2d.y) / rect.height) * height;
+    view.x = pan2d.viewX + dx;
+    view.y = pan2d.viewY + dy;
+    pan2d.moved = pan2d.moved || Math.abs(dx) + Math.abs(dy) > 2;
+  }
+});
+function end2dPointer() {
+  dragNode = null;
+  pan2d.active = false;
+  svg.classList.remove("panning");
+}
+svg.addEventListener("pointerup", end2dPointer);
+svg.addEventListener("pointercancel", end2dPointer);
+svg.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  const rect = svg.getBoundingClientRect();
+  const pointerX = ((event.clientX - rect.left) / rect.width) * width;
+  const pointerY = ((event.clientY - rect.top) / rect.height) * height;
+  const graphX = (pointerX - view.x) / view.scale;
+  const graphY = (pointerY - view.y) / view.scale;
+  const delta = event.deltaY > 0 ? 0.92 : 1.08;
+  const nextScale = Math.max(0.25, Math.min(3.0, view.scale * delta));
+  view.x = pointerX - graphX * nextScale;
+  view.y = pointerY - graphY * nextScale;
+  view.scale = nextScale;
+});
+canvas.addEventListener("pointerdown", (event) => {
+  pointer = { active: true, x: event.clientX, y: event.clientY };
+  orbitAuto = false;
+  canvas.setPointerCapture(event.pointerId);
+});
+canvas.addEventListener("pointermove", (event) => {
+  if (pointer.active) {
+    orbit.yaw += (event.clientX - pointer.x) * 0.006;
+    orbit.pitch = Math.max(-1.1, Math.min(1.1, orbit.pitch + (event.clientY - pointer.y) * 0.004));
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+    mapTooltip.classList.add("hidden");
+    return;
+  }
+  showTooltip(hitTestCanvasNode(event), event);
+});
+canvas.addEventListener("pointerleave", () => showTooltip(null));
+canvas.addEventListener("pointerup", () => { pointer.active = false; });
+canvas.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  orbit.zoom = Math.max(320, Math.min(2400, orbit.zoom + event.deltaY * 1.15));
+});
+canvas.addEventListener("click", (event) => {
+  const hit = hitTestCanvasNode(event);
+  if (hit) selectNode(hit.node.id);
+});
+
+let grindProgressTimer = null;
+function startGrindProgress() {
+  const fill = document.getElementById("grindProgressFill");
+  const percentLabel = document.getElementById("grindProgressPercent");
+  const stageLabel = document.getElementById("grindProgressStage");
+  const elapsedLabel = document.getElementById("grindElapsed");
+  const track = document.getElementById("grindProgressTrack");
+  const startedAt = Date.now();
+  const stages = [
+    [0, "Preparing session notes…"],
+    [3, "Reading active notes…"],
+    [10, "Extracting pains, observations, and questions…"],
+    [22, "Synthesizing How-Might-We prompts…"],
+    [45, "Developing solution starters…"],
+    [75, "Ranking and checking the outputs…"],
+  ];
+  const update = () => {
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    const percent = Math.min(95, Math.round(6 + 89 * (1 - Math.exp(-elapsed / 24))));
+    const stage = stages.reduce((current, candidate) => elapsed >= candidate[0] ? candidate : current, stages[0]);
+    fill.style.width = `${percent}%`;
+    percentLabel.textContent = `${percent}% estimated`;
+    stageLabel.textContent = stage[1];
+    track.setAttribute("aria-valuenow", String(percent));
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    elapsedLabel.textContent = minutes
+      ? `Working for ${minutes}m ${String(seconds).padStart(2, "0")}s — still running`
+      : `Working for ${seconds} second${seconds === 1 ? "" : "s"} — still running`;
+  };
+  update();
+  clearInterval(grindProgressTimer);
+  grindProgressTimer = setInterval(update, 500);
+}
+
+document.getElementById("fitMap").addEventListener("click", () => {
+  view = { x: 0, y: 0, scale: 1 };
+  orbit = { yaw: -0.55, pitch: 0.42, zoom: 760 };
+  statusLine.textContent = "Map fitted.";
+});
+function zoom2dAtCenter(factor) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const graphX = (centerX - view.x) / view.scale;
+  const graphY = (centerY - view.y) / view.scale;
+  const nextScale = Math.max(0.25, Math.min(3.0, view.scale * factor));
+  view.x = centerX - graphX * nextScale;
+  view.y = centerY - graphY * nextScale;
+  view.scale = nextScale;
+}
+document.getElementById("zoomOutMap").addEventListener("click", () => {
+  if (mode === "3d") orbit.zoom = Math.min(2400, orbit.zoom * 1.28);
+  else zoom2dAtCenter(0.8);
+  orbitAuto = false;
+  statusLine.textContent = "Zoomed out.";
+});
+document.getElementById("zoomInMap").addEventListener("click", () => {
+  if (mode === "3d") orbit.zoom = Math.max(320, orbit.zoom / 1.28);
+  else zoom2dAtCenter(1.25);
+  orbitAuto = false;
+  statusLine.textContent = "Zoomed in.";
+});
+document.getElementById("togglePhysics").addEventListener("change", (event) => { physics = event.target.checked; });
+document.getElementById("toggleRelated").addEventListener("change", (event) => { showRelatedRails = event.target.checked; });
+document.getElementById("toggleThemeRails").addEventListener("change", (event) => { showThemeRails = event.target.checked; });
+document.getElementById("startGrind").addEventListener("click", () => {
+  const currentSession = new FormData(grindFilters).get("session") || "";
+  if (!currentSession) {
+    statusLine.textContent = "Choose a session first so GRIND can generate focused workshop outputs.";
+    return;
+  }
+  grinding = true;
+  orbitAuto = true;
+  grindStartedAt = performance.now();
+  if (!pageGeneratedGrind || currentSession !== loadedSession) {
+    grindRunField.disabled = false;
+    grindRunField.value = "true";
+    statusLine.textContent = "Starting session GRIND and generating IDEO outputs...";
+    document.getElementById("grindLoading").classList.remove("hidden");
+    startGrindProgress();
+    grindFilters.submit();
+    return;
+  }
+  statusLine.textContent = "Grinding this session. The skateboard follows idea rails and jumps between connected signals.";
+});
+document.getElementById("bailGrind").addEventListener("click", () => {
+  grinding = false;
+  orbitAuto = false;
+  grindSkater.classList.add("hidden");
+  statusLine.textContent = "Bailed. The map is still live for inspection.";
+});
+document.getElementById("toggleLabels").addEventListener("change", (event) => { showLabels = event.target.checked; });
+document.getElementById("grindSession").addEventListener("change", () => {
+  grindRunField.disabled = true;
+  statusLine.textContent = "Loading the selected session map...";
+  grindFilters.requestSubmit();
+});
+document.getElementById("view3d").addEventListener("click", () => {
+  setMapMode("3d");
+  statusLine.textContent = "Drag to orbit the 3D session map; click a node to inspect it.";
+});
+document.getElementById("view2d").addEventListener("click", () => {
+  setMapMode("2d");
+  statusLine.textContent = "Drag empty space to pan; drag a node to move it; scroll to zoom around the pointer.";
+});
+
+function refreshLegendUI() {
+  document.querySelectorAll(".legend-item").forEach((el) => {
+    el.classList.toggle("dimmed", activeTypes.size > 0 && !activeTypes.has(el.dataset.type));
+  });
+  const reset = document.getElementById("legendReset");
+  if (reset) reset.style.display = activeTypes.size > 0 ? "block" : "none";
+  const shown = activeTypes.size === 0 ? "all types" : Array.from(activeTypes).join(", ");
+  statusLine.textContent = `Showing ${shown}.`;
+}
+document.querySelectorAll(".legend-item").forEach((el) => {
+  el.addEventListener("click", () => {
+    const t = el.dataset.type;
+    if (!t) return;
+    if (activeTypes.has(t)) activeTypes.delete(t); else activeTypes.add(t);
+    mapTooltip.classList.add("hidden");
+    refreshLegendUI();
+  });
+});
+const legendResetBtn = document.getElementById("legendReset");
+if (legendResetBtn) legendResetBtn.addEventListener("click", () => { activeTypes.clear(); refreshLegendUI(); });
+
+if (!nodes.length) {
+  statusLine.textContent = "No memory objects match this scope.";
+} else {
+  setMapMode("3d");
+  tick();
+}
+</script>
+{% endblock %}

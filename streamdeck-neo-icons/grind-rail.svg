@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="grind-rail">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#4A5568"/>
+  <line x1="34" y1="92" x2="110" y2="58" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <line x1="46" y1="100" x2="46" y2="82" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="98" y1="76" x2="98" y2="58" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <path d="M44 64 Q50 74 62 70 L92 58 Q104 53 108 41" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="58" cy="74" r="6" fill="#FFFFFF"/><circle cx="94" cy="60" r="6" fill="#FFFFFF"/>
+  <text x="72" y="124" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="800" letter-spacing="1" fill="#EAF1FB">GRIND</text>
+</svg>

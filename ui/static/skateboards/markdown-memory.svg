@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" role="img" aria-label="Markdown to memory skateboard">
+  <rect x="18" y="22" width="604" height="136" rx="68" fill="#f7fbfd" stroke="#c8d8e8" stroke-width="4"/>
+  <path d="M88 92 H560" stroke="#cbdce8" stroke-width="9" stroke-linecap="round" stroke-dasharray="24 28"/>
+  <text x="320" y="64" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="800" letter-spacing="5" fill="#526173">MARKDOWN TO MEMORY</text>
+  <text x="170" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="800" fill="#31425e">#P:</text>
+  <text x="320" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="800" fill="#31425e">#Q:</text>
+  <text x="470" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="800" fill="#31425e">#S:</text>
+</svg>

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Stats{% endblock %}
+{% block content %}
+<section class="pagehead"><h1>Stats</h1></section>
+<section class="grid stats">
+  <div><strong>{{ total }}</strong><span>Total</span></div>
+  <div><strong>{{ top_tags | length }}</strong><span>Top tags</span></div>
+</section>
+<h2>Top tags</h2>
+<div class="chips roomy">{% for tag, count in top_tags %}<span>{{ tag }} {{ count }}</span>{% endfor %}</div>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Search SKATE{% endblock %}
+{% block content %}
+<section class="pagehead library-head"><h1>Search</h1></section>
+<form class="filters" method="get" action="/search">
+  <input name="q" placeholder="Keyword" value="{{ q }}">
+  <input name="theme" placeholder="Theme" value="{{ theme }}">
+  <button class="button primary" type="submit">Search</button>
+</form>
+<div class="list">
+  {% for entry in results %}
+    <article class="item">
+      <div>
+        <div class="entry-meta-row inline">
+          <span class="type-pill type-{{ entry.entry_type }}">{{ entry.type_label }}</span>
+        </div>
+        <a class="item-title" href="/entry/{{ entry.file_id }}">{{ entry.title }}</a>
+        <p>{{ entry.summary }}</p>
+      </div>
+      <time>{{ entry.date }}</time>
+    </article>
+  {% else %}
+    <p class="muted">No matching entries.</p>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" role="img" aria-label="GRIND skateboard">
+  <rect x="18" y="22" width="604" height="136" rx="68" fill="#eff7fb" stroke="#c8d8e8" stroke-width="4"/>
+  <path d="M80 118 C160 48 216 72 285 92 S430 130 545 58" fill="none" stroke="#6f89ad" stroke-width="10" stroke-linecap="round"/>
+  <path d="M70 54 H565 M70 90 H565 M70 126 H565" stroke="#d6e4ef" stroke-width="4"/>
+  <circle cx="186" cy="82" r="11" fill="#915b38"/><circle cx="342" cy="101" r="11" fill="#3a6f75"/><circle cx="456" cy="86" r="11" fill="#5b8f75"/>
+  <text x="320" y="86" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" font-weight="800" letter-spacing="4" fill="#31425e">GRIND</text>
+</svg>

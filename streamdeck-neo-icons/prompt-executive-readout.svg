@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="prompt-executive-readout">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#2E7D32"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="38" y="34" width="68" height="48" rx="6"/>
+    <line x1="72" y1="82" x2="72" y2="92"/><line x1="58" y1="92" x2="86" y2="92"/>
+  </g>
+  <g stroke="#FFFFFF" stroke-width="7" stroke-linecap="round">
+    <line x1="55" y1="68" x2="55" y2="60"/><line x1="72" y1="68" x2="72" y2="50"/><line x1="89" y1="68" x2="89" y2="44"/>
+  </g>
+  <text x="72" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800" letter-spacing="1" fill="#EAF1FB">READOUT</text>
+</svg>

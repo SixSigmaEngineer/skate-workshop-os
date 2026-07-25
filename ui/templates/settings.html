@@ -1,0 +1,562 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<section class="pagehead"><h1>Settings</h1></section>
+{% if saved %}<p class="notice">Settings saved.</p>{% endif %}
+<form method="post" action="/settings" class="form settings-form">
+  <section class="settings-section">
+    <h2>General AI / API</h2>
+    <div class="two">
+      <label>General GPT-5.6 model
+        <select name="model" id="model">
+          {% for item in model_options["openai"] %}
+            <option value="{{ item.id }}" {% if current_settings.model == item.id %}selected{% endif %}>{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>General reasoning
+        <select name="reasoning_effort">
+          {% for effort in ["none", "low", "medium", "high", "xhigh", "max"] %}
+            <option value="{{ effort }}" {% if current_settings.reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <p class="muted">SKATE uses the OpenAI GPT-5.6 family through the Responses API, with an explicit reasoning level for each workload.</p>
+    {% set smod = current_settings.spotter_model or current_settings.model %}
+    <div class="two">
+      <label>Spotter GPT-5.6 model
+        <select name="spotter_model" id="spotterModel">
+          {% for item in model_options["openai"] %}
+            <option value="{{ item.id }}" {% if smod == item.id %}selected{% endif %}>{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Spotter reasoning
+        <select name="spotter_reasoning_effort">
+          {% for effort in ["none", "low", "medium", "high", "xhigh", "max"] %}
+            <option value="{{ effort }}" {% if current_settings.spotter_reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <p class="muted"><strong>GRIND uses the General model and reasoning selections above</strong> through the OpenAI Responses API. Spotter can use its own lower-latency settings.</p>
+    <div class="two">
+      <label>Max tokens<input name="max_tokens" type="number" min="128" max="16000" step="128" value="{{ current_settings.max_tokens }}"></label>
+      <label>OpenAI Base URL<input name="openai_base_url" value="{{ current_settings.openai_base_url or 'https://api.openai.com/v1' }}"></label>
+    </div>
+    <label>OpenAI API key
+      <input name="openai_api_key" type="password" placeholder="{% if current_settings.api_key_present['openai'] %}Saved{% else %}Not saved{% endif %}">
+    </label>
+  </section>
+
+  <section class="settings-section">
+    <h2>Spotter</h2>
+    <p class="muted">Spotter also reads the local workshop knowledge corpus in <code>SKATE/workshop-knowledge-documents</code> so it can help with process analysis, Gemba, Lean improvement, Kaizen/RIE, design thinking, and AI automation opportunities.</p>
+    <div class="two">
+      <label>Agent name<input name="spotter_name" value="{{ current_settings.spotter_name }}"></label>
+      <label>Subtitle<input name="spotter_subtitle" value="{{ current_settings.spotter_subtitle }}"></label>
+    </div>
+    <label>System prompt / agent persona
+      <textarea name="spotter_persona" rows="9">{{ current_settings.spotter_persona }}</textarea>
+    </label>
+    <label>Methodology stack
+      <textarea name="spotter_methodology" rows="8">{{ current_settings.spotter_methodology }}</textarea>
+    </label>
+    <label>Response style
+      <textarea name="spotter_style" rows="5">{{ current_settings.spotter_style }}</textarea>
+    </label>
+  </section>
+
+  <section class="settings-section">
+    <h2>Voice</h2>
+    <p class="muted">Default can stay fully local. Switch providers later when a cloud voice workflow is connected.</p>
+    <label>Microphone
+      <select name="microphone" id="micSelect">
+        <option value="system-default" {% if current_settings.microphone in ['', 'system-default', None] %}selected{% endif %}>System default</option>
+        {% if current_settings.microphone and current_settings.microphone != 'system-default' %}
+          <option value="{{ current_settings.microphone }}" selected>{{ current_settings.microphone_label or 'Saved microphone' }}</option>
+        {% endif %}
+      </select>
+    </label>
+    <input type="hidden" name="microphone_label" id="micLabel" value="{{ current_settings.microphone_label or '' }}">
+    <div class="toolbar">
+      <button type="button" class="button" id="micDetectBtn"><img class="button-icon" src="/static/icons/mic.svg" alt="">Detect microphones</button>
+      <span class="muted" id="micStatus">Click Detect to grant microphone access and list your input devices, then pick one and Save.</span>
+    </div>
+    <div class="two">
+      <label>Speech-to-Text engine
+        <select name="speech_to_text_provider" id="sttProvider">
+          <option value="openai" {% if current_settings.speech_to_text_provider == 'openai' %}selected{% endif %}>OpenAI Realtime Whisper — live</option>
+          <option value="local" {% if current_settings.speech_to_text_provider == 'local' %}selected{% endif %}>Local Whisper — private and near-live</option>
+          <option value="elevenlabs" {% if current_settings.speech_to_text_provider == 'elevenlabs' %}selected{% endif %}>ElevenLabs Scribe — cloud</option>
+        </select>
+      </label>
+      <label>Text-to-Speech
+        <select name="text_to_speech_provider" id="ttsProvider">
+          <option value="openai" {% if current_settings.text_to_speech_provider == 'openai' %}selected{% endif %}>OpenAI GPT-Realtime mini</option>
+          <option value="local" {% if current_settings.text_to_speech_provider == 'local' %}selected{% endif %}>Windows local voice</option>
+          <option value="elevenlabs" {% if current_settings.text_to_speech_provider == 'elevenlabs' %}selected{% endif %}>ElevenLabs</option>
+        </select>
+      </label>
+    </div>
+    <div id="openAiVoiceSettings">
+      <div id="openAiTtsSettings">
+        <label>OpenAI voice
+          <select name="openai_realtime_voice">
+            {% for voice in ["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"] %}
+              <option value="{{ voice }}" {% if current_settings.openai_realtime_voice == voice %}selected{% endif %}>{{ voice }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div id="openAiSttSettings">
+        <label>Live transcription delay
+          <select name="openai_realtime_transcription_delay">
+            {% for delay in ["minimal", "low", "medium", "high", "xhigh"] %}
+              <option value="{{ delay }}" {% if current_settings.openai_realtime_transcription_delay == delay %}selected{% endif %}>{{ delay }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <p class="muted">OpenAI uses GPT-Realtime Whisper for live captions and GPT-Realtime mini for Spotter talk-back with the same saved OpenAI key. OpenAI does not add speaker labels here.</p>
+    </div>
+    <div id="localSttSettings">
+      <label>Local Whisper model
+        <select name="transcription_model">
+          {% for model in whisper_models %}
+            <option value="{{ model.id }}" {% if current_settings.transcription_model == model.id %}selected{% endif %}>{{ model.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="muted">Applies only to Local Whisper. Larger models are more accurate but take longer on this computer.</p>
+    </div>
+    <div id="elevenLabsSttSettings" hidden>
+      <label>ElevenLabs transcription model
+        <select name="elevenlabs_stt_model">
+          <option value="scribe_v2" {% if current_settings.elevenlabs_stt_model != 'scribe_v1' %}selected{% endif %}>Scribe v2 — recommended batch transcription</option>
+          <option value="scribe_v1" {% if current_settings.elevenlabs_stt_model == 'scribe_v1' %}selected{% endif %}>Scribe v1 — legacy</option>
+        </select>
+      </label>
+      <p class="muted">Spotter Live automatically uses Scribe Realtime for live transcription and speaker labels.</p>
+    </div>
+    <label><input type="checkbox" name="speak_responses_aloud" {% if current_settings.speak_responses_aloud %}checked{% endif %}> Speak responses aloud</label>
+
+    <div id="elevenLabsSettings" hidden>
+      <h3>ElevenLabs</h3>
+      <p class="muted">Optional: use ElevenLabs for Scribe speaker labels or ElevenLabs voices.</p>
+      <label>ElevenLabs API key
+        <input name="elevenlabs_api_key" type="password" placeholder="{% if current_settings.api_key_present['elevenlabs'] %}Saved{% else %}Not saved{% endif %}">
+      </label>
+      <label><input type="checkbox" name="clear_elevenlabs_api_key"> Clear saved ElevenLabs key</label>
+      <div class="two">
+        <label>Voice
+          <div class="voice-picker" id="elVoicePicker">
+            <input type="text" id="elVoiceSearch" placeholder="Choose or search a voice" autocomplete="off">
+            <input type="hidden" name="elevenlabs_voice_id" id="elVoiceId" value="{{ current_settings.elevenlabs_voice_id or '' }}">
+            <div class="voice-menu" id="elVoiceMenu" hidden></div>
+          </div>
+        </label>
+        <label>TTS model
+          <input name="elevenlabs_tts_model" list="elTtsModels" value="{{ current_settings.elevenlabs_tts_model or '' }}" placeholder="eleven_flash_v2_5">
+          <datalist id="elTtsModels">
+            <option value="eleven_flash_v2_5">Flash v2.5 - fastest ~75ms (best for live)</option>
+            <option value="eleven_multilingual_v2">Multilingual v2 - premium quality</option>
+            <option value="eleven_v3">Eleven v3 - most expressive</option>
+          </datalist>
+        </label>
+      </div>
+      <div class="toolbar">
+        <button class="button" type="button" id="elLoadVoicesBtn">Load my voices</button>
+        <button class="button" type="button" id="elTestBtn">Test voice</button>
+        <span class="muted" id="elTestStatus">Load my voices pulls your account's voices into the Voice ID list. Test plays a short sample.</span>
+      </div>
+    </div>
+  </section>
+
+  <style>
+  .voice-picker { position: relative; }
+  .voice-picker input[type="text"] { width: 100%; }
+  .voice-menu {
+    position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px);
+    background: #fff; border: 1px solid #c9c9c9; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .14); max-height: 300px; overflow-y: auto;
+  }
+  .voice-option { padding: 8px 12px; cursor: pointer; }
+  .voice-option:hover { background: #eef3ff; }
+  .voice-option .voice-name { font-weight: 700; color: #000; }
+  .voice-option .voice-id { font-size: 12px; color: #8a8a8a; font-family: ui-monospace, Consolas, monospace; }
+  </style>
+
+  <script>
+  (() => {
+    const provider = document.getElementById("sttProvider");
+    const ttsProvider = document.getElementById("ttsProvider");
+    const localSettings = document.getElementById("localSttSettings");
+    const elevenLabsSettings = document.getElementById("elevenLabsSttSettings");
+    const elevenLabsAccountSettings = document.getElementById("elevenLabsSettings");
+    const openAiSettings = document.getElementById("openAiVoiceSettings");
+    const openAiSttSettings = document.getElementById("openAiSttSettings");
+    const openAiTtsSettings = document.getElementById("openAiTtsSettings");
+    if (!provider || !ttsProvider || !localSettings || !elevenLabsSettings || !elevenLabsAccountSettings || !openAiSettings || !openAiSttSettings || !openAiTtsSettings) return;
+    const update = () => {
+      const useElevenLabsStt = provider.value === "elevenlabs";
+      const useElevenLabs = useElevenLabsStt || ttsProvider.value === "elevenlabs";
+      const useLocal = provider.value === "local";
+      const useOpenAIStt = provider.value === "openai";
+      const useOpenAITts = ttsProvider.value === "openai";
+      const useOpenAI = useOpenAIStt || useOpenAITts;
+      localSettings.hidden = !useLocal;
+      elevenLabsSettings.hidden = !useElevenLabsStt;
+      elevenLabsAccountSettings.hidden = !useElevenLabs;
+      openAiSettings.hidden = !useOpenAI;
+      openAiSttSettings.hidden = !useOpenAIStt;
+      openAiTtsSettings.hidden = !useOpenAITts;
+    };
+    provider.addEventListener("change", update);
+    ttsProvider.addEventListener("change", update);
+    update();
+  })();
+  </script>
+
+  <script>
+  (() => {
+    const search = document.getElementById("elVoiceSearch");
+    const hidden = document.getElementById("elVoiceId");
+    const menu = document.getElementById("elVoiceMenu");
+    if (!search || !hidden || !menu) return;
+
+    let voices = [
+      {id: "rHWSYoq8UlV0YIBKMryp", name: "Jerry B - Effortless, Cool and Laid-Back"},
+      {id: "UgBBYS2sOqTuMpoF3BR0", name: "Mark - Natural Conversations"},
+      {id: "cgSgspJ2msm6clMCkdW9", name: "Jessica - Playful, Bright, Warm"},
+      {id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel - neutral female"}
+    ];
+    // "Load my voices" replaces the list through this hook.
+    window.elSetVoices = (list) => {
+      if (Array.isArray(list) && list.length) voices = list;
+      const match = voices.find((v) => v.id === hidden.value);
+      if (match) search.value = match.name;
+      if (!menu.hidden) render(search.value.trim());
+    };
+
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+    function render(filter) {
+      const f = (filter || "").toLowerCase();
+      const items = voices.filter((v) => !f || v.name.toLowerCase().includes(f) || v.id.toLowerCase().includes(f));
+      menu.innerHTML = items.length
+        ? items.map((v) => `<div class="voice-option" data-id="${esc(v.id)}" data-name="${esc(v.name)}"><div class="voice-name">${esc(v.name)}</div><div class="voice-id">${esc(v.id)}</div></div>`).join("")
+        : '<div class="voice-option"><div class="voice-id">No matching voice — the text above is used as a raw voice ID.</div></div>';
+      menu.hidden = false;
+    }
+
+    function syncFromText() {
+      const t = search.value.trim();
+      if (!t) { hidden.value = ""; return; }
+      const byName = voices.find((v) => v.name.toLowerCase() === t.toLowerCase());
+      if (byName) { hidden.value = byName.id; return; }
+      // Pasting a raw voice ID still works.
+      if (/^[A-Za-z0-9]{12,}$/.test(t)) hidden.value = t;
+    }
+
+    // Show the saved voice by name when we know it; otherwise show the raw ID.
+    const saved = voices.find((v) => v.id === hidden.value);
+    search.value = saved ? saved.name : (hidden.value || "");
+
+    search.addEventListener("focus", () => render(""));
+    search.addEventListener("input", () => { syncFromText(); render(search.value.trim()); });
+    search.addEventListener("blur", () => {
+      // Snap the display text back to the selected voice's name.
+      setTimeout(() => {
+        const v = voices.find((x) => x.id === hidden.value);
+        if (v) search.value = v.name;
+      }, 150);
+    });
+    menu.addEventListener("mousedown", (event) => {
+      const opt = event.target.closest(".voice-option[data-id]");
+      if (!opt) return;
+      event.preventDefault();
+      hidden.value = opt.dataset.id;
+      search.value = opt.dataset.name;
+      menu.hidden = true;
+    });
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest("#elVoicePicker")) menu.hidden = true;
+    });
+  })();
+  </script>
+
+  <script>
+  (() => {
+    const btn = document.getElementById("elTestBtn");
+    if (!btn) return;
+    const status = document.getElementById("elTestStatus");
+    const val = (name) => { const el = document.querySelector(`[name="${name}"]`); return el ? el.value.trim() : ""; };
+    btn.addEventListener("click", async () => {
+      status.textContent = "Synthesizing sample...";
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/elevenlabs-test", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            api_key: val("elevenlabs_api_key"),
+            voice_id: val("elevenlabs_voice_id"),
+            model: val("elevenlabs_tts_model")
+          })
+        });
+        const ct = res.headers.get("content-type") || "";
+        if (res.ok && ct.includes("audio")) {
+          const blob = await res.blob();
+          const audio = new Audio(URL.createObjectURL(blob));
+          audio.onended = () => URL.revokeObjectURL(audio.src);
+          audio.play();
+          status.textContent = "Playing sample.";
+        } else {
+          let msg = `Test failed (HTTP ${res.status}).`;
+          try { const data = await res.json(); if (data && data.error) msg = data.error; } catch (e) {}
+          if (res.status === 404) msg = "Test failed (HTTP 404) — restart SKATE so the new voice routes load.";
+          status.textContent = msg;
+        }
+      } catch (err) {
+        status.textContent = "Test failed. " + err;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    const loadBtn = document.getElementById("elLoadVoicesBtn");
+    if (loadBtn) {
+      loadBtn.addEventListener("click", async () => {
+        status.textContent = "Loading your ElevenLabs voices...";
+        loadBtn.disabled = true;
+        try {
+          const res = await fetch("/api/elevenlabs-voices", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ api_key: val("elevenlabs_api_key") })
+          });
+          const data = await res.json();
+          if (data.ok && Array.isArray(data.voices)) {
+            if (window.elSetVoices) {
+              window.elSetVoices(data.voices.map((v) => ({
+                id: v.id,
+                name: v.name + (v.category ? " - " + v.category : "")
+              })));
+            }
+            status.textContent = `Loaded ${data.voices.length} voices. Click the Voice field to choose.`;
+          } else {
+            status.textContent = data.error || "Could not load voices.";
+          }
+        } catch (err) {
+          status.textContent = "Could not load voices. " + err;
+        } finally {
+          loadBtn.disabled = false;
+        }
+      });
+    }
+  })();
+  </script>
+
+  <script>
+  (() => {
+    const btn = document.getElementById("micDetectBtn");
+    const sel = document.getElementById("micSelect");
+    const label = document.getElementById("micLabel");
+    const status = document.getElementById("micStatus");
+    if (!btn || !sel) return;
+    btn.addEventListener("click", async () => {
+      status.textContent = "Requesting microphone access…";
+      btn.disabled = true;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const mics = devices.filter((d) => d.kind === "audioinput");
+        const keep = sel.value;
+        sel.innerHTML = '<option value="system-default">System default</option>' +
+          mics.map((d, i) => `<option value="${d.deviceId}">${(d.label || ("Microphone " + (i + 1))).replace(/[<>]/g, "")}</option>`).join("");
+        if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+        if (label) label.value = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : "";
+        status.textContent = mics.length ? `Found ${mics.length} microphone(s). Pick one, then Save Settings.` : "No microphones found.";
+      } catch (e) {
+        status.textContent = "Microphone access was blocked. Allow mic access for SKATE (browser prompt, or Windows Settings → Privacy → Microphone), then try again.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    sel.addEventListener("change", () => {
+      const opt = sel.options[sel.selectedIndex];
+      if (label) label.value = opt ? opt.textContent : "";
+    });
+  })();
+  </script>
+
+  <section class="settings-section">
+    <h2>Stream Deck Trigger</h2>
+    <label>Local server port<input name="streamdeck_port" type="number" min="1" max="65535" value="{{ current_settings.streamdeck_port }}"></label>
+    <label><input type="checkbox" name="streamdeck_auto_send" {% if current_settings.streamdeck_auto_send %}checked{% endif %}> Auto-send after voice capture stops</label>
+    <p class="muted">Use the hotkey map in <code>SKATE/streamdeck-neo-icons/HOTKEYS.md</code>. Future HTTP triggers can point to <code>http://127.0.0.1:{{ current_settings.streamdeck_port }}/trigger/&lt;mode&gt;</code>.</p>
+  </section>
+
+  <button class="button primary" type="submit">Save Settings</button>
+</form>
+
+<section class="settings-section" id="onenoteImport">
+  <h2><img src="/static/onenote-logo.png" alt="OneNote" style="height:30px;width:30px;vertical-align:-7px;margin-right:9px">Import from OneNote</h2>
+  <p class="muted">
+    Bring your Microsoft OneNote content into SKATE. Each <strong>Notebook</strong> becomes a
+    <strong>session</strong>; each <strong>page</strong> becomes a <strong>note</strong>.
+    First export your OneNote (in OneNote desktop: <em>File &rarr; Export &rarr; Notebook or Section &rarr; Word Document</em>,
+    or use Markdown / HTML / PDF), copy the files to this computer, then point SKATE at that folder.
+    Supported: <code>.docx</code>, <code>.md</code>, <code>.html</code>, <code>.txt</code>, and <code>.pdf</code>.
+  </p>
+
+  <label>Export folder (full path)
+    <span style="display:flex; gap:.5rem; align-items:center; margin-top:.25rem;">
+      <input type="text" id="onSource" placeholder="C:\Users\you\Desktop\OneNote Export" autocomplete="off" style="flex:1;">
+      <button class="button" type="button" id="onBrowseBtn" style="white-space:nowrap;"><img class="button-icon" src="/static/onenote-logo.png" alt="">Browse…</button>
+    </span>
+  </label>
+
+  <label>Grouping
+    <select id="onMode">
+      <option value="by_folder">Each top-level folder is a Notebook &rarr; session</option>
+      <option value="single">Put everything in one session</option>
+    </select>
+  </label>
+
+  <label id="onSessionNameWrap">Session name (used for loose files / single-session mode)
+    <input type="text" id="onSessionName" value="OneNote Import" autocomplete="off">
+  </label>
+
+  <label><input type="checkbox" id="onSplit" checked> Split Word / HTML files into one note per page (by heading)</label>
+
+  <div class="row" style="display:flex; gap:.5rem; margin-top:.5rem;">
+    <button class="button" type="button" id="onPreviewBtn">Preview</button>
+    <button class="button primary" type="button" id="onImportBtn" disabled>Import</button>
+  </div>
+
+  <div id="onStatus" class="muted" style="margin-top:.6rem;"></div>
+  <div id="onResult" style="margin-top:.6rem;"></div>
+</section>
+
+<script>
+(function () {
+  const sourceEl = document.getElementById("onSource");
+  const modeEl = document.getElementById("onMode");
+  const sessionNameEl = document.getElementById("onSessionName");
+  const splitEl = document.getElementById("onSplit");
+  const previewBtn = document.getElementById("onPreviewBtn");
+  const importBtn = document.getElementById("onImportBtn");
+  const statusEl = document.getElementById("onStatus");
+  const resultEl = document.getElementById("onResult");
+  const browseBtn = document.getElementById("onBrowseBtn");
+
+  if (browseBtn) {
+    browseBtn.addEventListener("click", async () => {
+      browseBtn.disabled = true;
+      statusEl.textContent = "Opening folder picker… (look for a Windows dialog)";
+      try {
+        const res = await fetch("/api/pick-folder", { method: "POST" });
+        const data = await res.json();
+        if (data.ok && data.path) {
+          sourceEl.value = data.path;
+          statusEl.textContent = "Folder selected. Click Preview.";
+        } else if (data.ok) {
+          statusEl.textContent = "No folder selected.";
+        } else {
+          statusEl.textContent = data.error || "Could not open the picker — type the path instead.";
+        }
+      } catch (e) {
+        statusEl.textContent = "Picker unavailable — type the path instead.";
+      } finally {
+        browseBtn.disabled = false;
+      }
+    });
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  function payload() {
+    return {
+      source_path: sourceEl.value.trim(),
+      mode: modeEl.value,
+      session_name: sessionNameEl.value.trim() || "OneNote Import",
+      split_pages: splitEl.checked,
+    };
+  }
+
+  function renderPlan(plan, imported) {
+    if (!plan) { resultEl.innerHTML = ""; return; }
+    if (plan.error && (!plan.notebooks || !plan.notebooks.length)) {
+      resultEl.innerHTML = `<p class="muted" style="color:#b00;">${esc(plan.error)}</p>`;
+      importBtn.disabled = true;
+      return;
+    }
+    let html = "";
+    if (imported) {
+      html += `<p><strong>Imported ${plan.written} note(s)</strong> into ${esc((plan.sessions_created || []).length)} session(s).</p>`;
+    } else {
+      html += `<p>Found <strong>${plan.total_notes}</strong> note(s) across <strong>${plan.notebooks.length}</strong> notebook(s) in ${plan.total_files} file(s).</p>`;
+    }
+    plan.notebooks.forEach((nb) => {
+      html += `<details open style="margin:.3rem 0;"><summary><strong>${esc(nb.name)}</strong> &rarr; session <code>${esc(nb.session_slug)}</code> (${nb.notes.length} notes)</summary><ul style="margin:.3rem 0 .6rem 1rem;">`;
+      nb.notes.forEach((n) => {
+        html += `<li>${esc(n.title)} <span class="muted">[${esc(n.ext)}]</span></li>`;
+      });
+      html += `</ul></details>`;
+    });
+    if (plan.skipped && plan.skipped.length) {
+      html += `<p class="muted"><strong>Skipped ${plan.skipped.length}:</strong></p><ul style="margin:.2rem 0 .4rem 1rem;">`;
+      plan.skipped.forEach((s) => { html += `<li class="muted">${esc(s.file)} — ${esc(s.reason)}</li>`; });
+      html += `</ul>`;
+    }
+    resultEl.innerHTML = html;
+  }
+
+  async function call(url) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload()),
+    });
+    return res.json();
+  }
+
+  previewBtn.addEventListener("click", async () => {
+    if (!sourceEl.value.trim()) { statusEl.textContent = "Enter the export folder path first."; return; }
+    statusEl.textContent = "Scanning…";
+    importBtn.disabled = true;
+    try {
+      const plan = await call("/api/onenote-preview");
+      renderPlan(plan, false);
+      const n = plan.total_notes || 0;
+      statusEl.textContent = n ? `Preview ready — ${n} note(s) will be created. Review, then Import.` : "Nothing to import.";
+      importBtn.disabled = n === 0;
+    } catch (e) {
+      statusEl.textContent = "Preview failed: " + e;
+    }
+  });
+
+  importBtn.addEventListener("click", async () => {
+    if (!confirm("Import these notes into SKATE? This writes new files into your vault.")) return;
+    statusEl.textContent = "Importing…";
+    importBtn.disabled = true;
+    try {
+      const plan = await call("/api/onenote-import");
+      renderPlan(plan, true);
+      statusEl.textContent = `Done — imported ${plan.written || 0} note(s). Open Sessions to see them.`;
+    } catch (e) {
+      statusEl.textContent = "Import failed: " + e;
+      importBtn.disabled = false;
+    }
+  });
+})();
+</script>
+
+{% endblock %}

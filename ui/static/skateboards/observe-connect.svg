@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" role="img" aria-label="Observe connect skateboard">
+  <rect x="18" y="22" width="604" height="136" rx="68" fill="#f7fbfd" stroke="#c8d8e8" stroke-width="4"/>
+  <path d="M90 112 C155 52 238 54 320 92 S458 142 550 72" fill="none" stroke="#9fb5cf" stroke-width="7" stroke-linecap="round"/>
+  <path d="M106 76 H275 M365 76 H535" stroke="#d6e4ef" stroke-width="8" stroke-linecap="round"/>
+  <text x="210" y="91" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="800" fill="#31425e">OBSERVE</text>
+  <text x="440" y="91" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="800" fill="#31425e">CONNECT</text>
+</svg>

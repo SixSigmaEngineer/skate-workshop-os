@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="spotter">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#243A66"/>
+  <path d="M72 18 L100 80 L86 80 L72 47 L58 80 L44 80 Z" fill="#FFFFFF"/>
+  <path d="M34 92 Q40 102 52 102 L92 102 Q104 102 110 92" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="56" y1="102" x2="56" y2="108" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <line x1="88" y1="102" x2="88" y2="108" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="56" cy="112" r="7" fill="#FFFFFF"/><circle cx="56" cy="112" r="2.6" fill="#243A66"/>
+  <circle cx="88" cy="112" r="7" fill="#FFFFFF"/><circle cx="88" cy="112" r="2.6" fill="#243A66"/>
+  <text x="72" y="133" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="800" letter-spacing="1" fill="#EAF1FB">SPOTTER</text>
+</svg>

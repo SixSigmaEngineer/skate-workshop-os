@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ session.label }}{% endblock %}
+{% block content %}
+<section class="pagehead">
+  <div><p class="eyebrow">{{ session.status }}</p><h1>{{ session.label }}</h1></div>
+  <div class="toolbar">
+    <form class="session-status-form" method="post" action="/session/{{ session.key }}/status">
+      <select class="session-status-select session-status-{{ session.status or 'active' }}" name="status" aria-label="Session status" onchange="this.form.submit()">
+        <option value="active" {% if session.status != "inactive" %}selected{% endif %}>Active</option>
+        <option value="inactive" {% if session.status == "inactive" %}selected{% endif %}>Inactive</option>
+      </select>
+    </form>
+    <a class="button" href="/spotter?session={{ session.key }}&session_label={{ session.label }}"><img class="button-icon" src="/static/icons/spotter.svg" alt="">Spotter</a>
+    <a class="button" href="/lineup?session={{ session.key }}"><img class="button-icon" src="/static/icons/lineup.svg" alt="">Lineup</a>
+    <a class="button primary" href="/new?session={{ session.key }}&session_label={{ session.label }}"><img class="button-icon" src="/static/icons/capture.svg" alt="">Capture</a>
+  </div>
+</section>
+<section class="session-lineup panel">
+  <div class="section-heading">
+    <div><p class="eyebrow">Session follow-through</p><h2>Up Next</h2></div>
+    <a href="/lineup?session={{ session.key }}">Open full Lineup →</a>
+  </div>
+  <div class="lineup-list compact-lineup">
+    {% for item in lineup_actions if item.lineup_status != "landed" %}
+      <article class="lineup-item">
+        <form method="post" action="/lineup/toggle/{{ item.file_id }}"><input type="hidden" name="return_to" value="/session/{{ session.key }}"><button class="lineup-check" type="submit" aria-label="Mark {{ item.title }} landed"><span></span></button></form>
+        <div class="lineup-item-body"><a class="item-title" href="/entry/{{ item.file_id }}">{{ item.title }}</a><div class="lineup-meta">{% if item.owner %}<span>{{ item.owner }}</span>{% endif %}{% if item.due_date %}<span>{{ item.due_date }}</span>{% endif %}</div></div>
+      </article>
+    {% else %}<p class="muted">No tracked actions yet. Open the Lineup or promote a <code>#A</code> item from a session note.</p>{% endfor %}
+  </div>
+</section>
+<div class="list">
+  {% for entry in entries %}
+    <article class="item"><div><a class="item-title" href="/entry/{{ entry.file_id }}">{{ entry.title }}</a><p>{{ entry.summary }}</p></div><span>{{ entry.type_label }}</span></article>
+  {% else %}
+    <p class="muted">No memory objects in this session yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="prompt-observe">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#0E7C86"/>
+  <path d="M40 58 Q72 30 104 58 Q72 86 40 58 Z" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round"/>
+  <circle cx="72" cy="58" r="11" fill="#FFFFFF"/>
+  <text x="72" y="120" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="800" letter-spacing="1" fill="#EAF1FB">OBSERVE</text>
+</svg>

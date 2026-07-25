@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="prompt-hmw">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#A65E00"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M72 26 a22 22 0 0 1 14 39 q-4 4 -4 9 L62 74 q0 -5 -4 -9 a22 22 0 0 1 14 -39 Z"/>
+    <line x1="63" y1="84" x2="81" y2="84"/><line x1="66" y1="92" x2="78" y2="92"/>
+  </g>
+  <g stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" opacity="0.9">
+    <line x1="72" y1="14" x2="72" y2="6"/><line x1="106" y1="48" x2="114" y2="48"/><line x1="38" y1="48" x2="30" y2="48"/>
+  </g>
+  <text x="72" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="800" letter-spacing="1" fill="#EAF1FB">HMW</text>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" role="img" aria-label="Design signals skateboard">
+  <rect x="18" y="22" width="604" height="136" rx="68" fill="#f7fbfd" stroke="#c8d8e8" stroke-width="4"/>
+  <path d="M90 64 H560 M90 92 H560 M90 120 H560" stroke="#d6e4ef" stroke-width="4"/>
+  <rect x="160" y="74" width="70" height="30" rx="8" fill="#f0d6ce"/><rect x="300" y="74" width="70" height="30" rx="8" fill="#dce8f6"/><rect x="440" y="74" width="70" height="30" rx="8" fill="#f1dfc1"/>
+  <text x="195" y="94" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="#8a3b3b">#P:</text>
+  <text x="335" y="94" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="#2f67a5">#O:</text>
+  <text x="475" y="94" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="#7a531d">#S:</text>
+  <text x="320" y="136" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="5" fill="#526173">DESIGN SIGNALS</text>
+</svg>

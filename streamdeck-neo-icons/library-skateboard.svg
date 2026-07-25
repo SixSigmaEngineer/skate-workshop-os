@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="library-skateboard">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#3A5775"/>
+  <path d="M30 56 Q38 68 52 68 L92 68 Q106 68 114 56" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="54" y1="68" x2="54" y2="76" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <line x1="90" y1="68" x2="90" y2="76" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="54" cy="82" r="8" fill="#FFFFFF"/><circle cx="54" cy="82" r="3" fill="#3A5775"/>
+  <circle cx="90" cy="82" r="8" fill="#FFFFFF"/><circle cx="90" cy="82" r="3" fill="#3A5775"/>
+  <text x="72" y="120" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="800" letter-spacing="1" fill="#EAF1FB">LIBRARY</text>
+</svg>

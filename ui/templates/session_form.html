@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}New Session{% endblock %}
+{% block content %}
+<section class="pagehead"><h1>New Session</h1></section>
+<form method="post" action="/sessions/new" class="form">
+  <label>Title<input name="title" value="{{ title }}" required></label>
+  <label>Session Key<input name="session" value="{{ session }}" placeholder="client-engagement-workshop"></label>
+  <label>Status<input name="status" value="{{ status }}"></label>
+  <label>Focus<textarea name="summary" rows="8">{{ summary }}</textarea></label>
+  <button class="button primary" type="submit">Create Session</button>
+</form>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Sessions{% endblock %}
+{% block content %}
+<section class="pagehead library-head">
+  <div>
+    <h1>Sessions</h1>
+    <p class="muted">Group notes into workshops, interviews, research passes, and readouts.</p>
+  </div>
+  <a class="button primary" href="/sessions/new">New session</a>
+</section>
+<div class="session-grid">
+  {% for row in session_rows %}
+    <article class="session-card">
+      <div class="session-card-head">
+        <a class="item-title" href="/session/{{ row.key }}">{{ row.label }}</a>
+        <form class="session-status-form" method="post" action="/session/{{ row.key }}/status">
+          <input type="hidden" name="return_to" value="sessions">
+          <select class="session-status-select session-status-{{ row.status or 'active' }}" name="status" aria-label="Status for {{ row.label }}" onchange="this.form.submit()">
+            <option value="active" {% if row.status != "inactive" %}selected{% endif %}>Active</option>
+            <option value="inactive" {% if row.status == "inactive" %}selected{% endif %}>Inactive</option>
+          </select>
+        </form>
+      </div>
+      <p class="session-count"><strong>{{ row.count }}</strong> entries</p>
+      <div class="chips">
+        {% for key, count in row.types.items() %}
+          <span>{{ entry_types.get(key, {"label": key}).label }} {{ count }}</span>
+        {% endfor %}
+      </div>
+    </article>
+  {% endfor %}
+</div>
+{% endblock %}

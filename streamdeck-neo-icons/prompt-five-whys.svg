@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="prompt-five-whys">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#5B3FA0"/>
+  <text x="70" y="80" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="62" font-weight="800" fill="#FFFFFF">5</text>
+  <text x="98" y="64" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="800" fill="#FFFFFF">?</text>
+  <text x="72" y="120" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="800" letter-spacing="1" fill="#EAF1FB">5 WHYS</text>
+</svg>

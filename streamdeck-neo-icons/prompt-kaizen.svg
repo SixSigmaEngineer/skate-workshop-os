@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144" role="img" aria-label="prompt-kaizen">
+  <rect x="4" y="4" width="136" height="136" rx="28" fill="#C2541B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M96 50 a28 28 0 1 0 6 22"/>
+  </g>
+  <path d="M86 36 L100 46 L82 56 Z" fill="#FFFFFF"/>
+  <text x="72" y="120" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="800" letter-spacing="1" fill="#EAF1FB">KAIZEN</text>
+</svg>

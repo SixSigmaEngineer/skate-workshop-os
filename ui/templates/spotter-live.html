@@ -1,0 +1,809 @@
+{% extends "base.html" %}
+{% block title %}Spotter Live{% endblock %}
+{% block content %}
+<section class="pagehead spotter-head">
+  <div>
+    <p class="eyebrow">Always-on room ear</p>
+    <h1>{{ spotter_name }} Live</h1>
+    <p class="muted">Listens to the room, writes a running markdown transcript, and answers questions with the transcript as knowledge.</p>
+  </div>
+</section>
+
+<style>
+.live-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 980px) { .live-grid { grid-template-columns: 1fr; } }
+.live-transcript { max-height: 460px; min-height: 220px; overflow-y: auto; padding: 12px; background: #fafafa; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; line-height: 1.55; }
+.live-transcript .seg { margin: 0 0 8px; }
+.live-transcript .seg .ts { color: #94a3b8; font-size: 11px; font-family: ui-monospace, Consolas, monospace; margin-right: 6px; }
+.live-transcript .seg .speaker { color: #315f95; font-weight: 750; margin-right: 5px; }
+.live-transcript .interim { color: #64748b; font-style: italic; }
+.live-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; margin-right: 6px; }
+.live-dot.on { background: #dc2626; animation: livepulse 1.4s ease-in-out infinite; }
+@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.agent-log { max-height: 320px; overflow-y: auto; }
+.agent-log .qa { margin: 0 0 12px; }
+.agent-log .qa .q { font-weight: 700; }
+.agent-log .qa .a { margin-top: 2px; }
+.file-pill { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }
+</style>
+
+<section class="live-grid">
+  <div class="panel">
+    <div class="toolbar" style="flex-wrap: wrap; gap: 10px;">
+      <button class="button primary" id="liveToggleBtn" type="button">
+        <img class="button-icon" src="/static/icons/record.svg?v=red1" alt=""><span>Start listening</span>
+      </button>
+      <input type="hidden" id="engineSelect" value="{{ stt_provider }}">
+      <span><strong>Engine:</strong>
+        <span class="file-pill">{% if stt_provider == 'openai' %}OpenAI GPT-Realtime Whisper{% elif stt_provider == 'elevenlabs' %}ElevenLabs Scribe Realtime{% else %}Local Whisper{% endif %}</span>
+      </span>
+      <a class="button" href="/settings">Change in Settings</a>
+      <span class="muted" id="liveStatus"><span class="live-dot" id="liveDot"></span><span id="liveStatusText">Idle</span></span>
+    </div>
+    <p class="muted" id="engineCapability" style="margin: 8px 0 6px;"></p>
+    {% if stt_provider == 'elevenlabs' and not elevenlabs_key_present %}
+      <p class="notice">ElevenLabs is selected, but no API key is saved. Add the key in Settings before starting.</p>
+    {% endif %}
+    {% if stt_provider == 'openai' and not openai_key_present %}
+      <p class="notice">OpenAI Realtime is selected, but no OpenAI API key is saved. Add the key in Settings before starting.</p>
+    {% endif %}
+    <p class="muted" style="margin: 8px 0 6px;">Transcript file: <span class="file-pill" id="filePill">created when you start</span></p>
+    <div class="live-transcript" id="liveTranscript" aria-live="polite">
+      <p class="muted">The room transcript will appear here.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0;">Ask {{ spotter_name }}</h3>
+    <p class="muted">Room listening pauses while you talk. The agent answers using everything captured so far.</p>
+    <div class="toolbar">
+      <button class="button talk-toggle" id="askVoiceBtn" type="button" aria-pressed="false">
+        <img class="button-icon" src="/static/icons/start-talking.svg" alt=""><span>Hold a question</span>
+      </button>
+    </div>
+    <div class="chat-compose" style="margin-top:10px;">
+      <textarea id="askInput" rows="2" placeholder="Or type a question about what's been said..."></textarea>
+      <div class="compose-actions">
+        <button class="button primary" id="askSendBtn" type="button"><img class="button-icon" src="/static/icons/coach.svg" alt="">Ask</button>
+      </div>
+    </div>
+    <div class="agent-log" id="agentLog"></div>
+  </div>
+</section>
+
+<script>
+const SPEAK_ALOUD_FALLBACK = {{ 'true' if speak_aloud else 'false' }};
+const TTS_PROVIDER_FALLBACK = "{{ tts_provider }}";
+const CONFIGURED_MICROPHONE = {{ microphone | tojson }};
+const AGENT_NAME = {{ spotter_name | tojson }};
+const LIVE_MODES = {{ modes | tojson }};
+const MODE_BY_ID = Object.fromEntries(LIVE_MODES.map((mode) => [mode.id, mode]));
+
+const toggleBtn = document.getElementById("liveToggleBtn");
+const engineSelect = document.getElementById("engineSelect");
+const engineCapability = document.getElementById("engineCapability");
+const liveStatus = document.getElementById("liveStatus");
+const liveDot = document.getElementById("liveDot");
+const filePill = document.getElementById("filePill");
+const transcriptPane = document.getElementById("liveTranscript");
+const askVoiceBtn = document.getElementById("askVoiceBtn");
+const askInput = document.getElementById("askInput");
+const askSendBtn = document.getElementById("askSendBtn");
+const agentLog = document.getElementById("agentLog");
+
+let roomActive = false;     // user wants the room ear on
+let paused = false;         // temporarily muted for an agent turn
+let fileName = "";
+let recognition = null;     // room SR (browser engine)
+let ws = null;              // realtime socket (elevenlabs engine)
+let audioCtx = null, processor = null, micStream = null;
+let openAiCommitTimer = null;
+let openAiConnectionError = "";
+const openAiDeltas = new Map();
+let localStream = null, localRecorder = null, localChunkTimer = null, localCountdownTimer = null;
+let localQueue = [], localQueueBusy = false;
+let pendingElevenCommit = "", pendingElevenCommitTimer = null;
+const speakerLabels = new Map();
+let interimEl = null;
+let asking = false;
+
+const liveStatusText = document.getElementById("liveStatusText");
+function setStatus(text, live) {
+  liveStatusText.textContent = text;
+  liveDot.classList.toggle("on", !!live);
+}
+
+async function openConfiguredMicrophone() {
+  const selected = CONFIGURED_MICROPHONE && CONFIGURED_MICROPHONE !== "system-default";
+  if (!selected) return navigator.mediaDevices.getUserMedia({audio: true});
+  try {
+    return await navigator.mediaDevices.getUserMedia({audio: {deviceId: {exact: CONFIGURED_MICROPHONE}}});
+  } catch (error) {
+    return navigator.mediaDevices.getUserMedia({audio: true});
+  }
+}
+
+function updateEngineCapability() {
+  if (engineSelect.value === "openai") {
+    engineCapability.textContent = "OpenAI GPT-Realtime Whisper provides live captions; Spotter talks back with GPT-Realtime mini. Audio is sent to OpenAI. Speaker labels are not available.";
+  } else if (engineSelect.value === "elevenlabs") {
+    engineCapability.textContent = "ElevenLabs Scribe Realtime can label different voices as Speaker 1, Speaker 2, and so on. Audio is sent to ElevenLabs.";
+  } else {
+    engineCapability.textContent = "Local Whisper is private and near-live: it stays on this computer and adds text in short processed segments without speaker labels.";
+  }
+}
+updateEngineCapability();
+
+function newFileName() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `spotter-live-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.md`;
+}
+
+function timeStamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function clearInterim() {
+  if (interimEl) { interimEl.remove(); interimEl = null; }
+}
+
+function showInterim(text) {
+  if (!text) { clearInterim(); return; }
+  if (!interimEl) {
+    interimEl = document.createElement("p");
+    interimEl.className = "seg interim";
+    transcriptPane.appendChild(interimEl);
+  }
+  interimEl.textContent = text;
+  transcriptPane.scrollTop = transcriptPane.scrollHeight;
+}
+
+async function appendToFile(text) {
+  if (!fileName || !text) return;
+  try {
+    await fetch("/api/spotter-live/append", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ file: fileName, text })
+    });
+  } catch (e) { /* keep capturing even if a write fails */ }
+}
+
+function speakerLabel(speakerId) {
+  if (!speakerId) return "";
+  if (!speakerLabels.has(speakerId)) speakerLabels.set(speakerId, `Speaker ${speakerLabels.size + 1}`);
+  return speakerLabels.get(speakerId);
+}
+
+function commitSegment(text, speaker = "") {
+  const clean = (text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return;
+  clearInterim();
+  const ts = timeStamp();
+  const p = document.createElement("p");
+  p.className = "seg";
+  p.innerHTML = `<span class="ts">${ts}</span>`;
+  if (speaker) {
+    const label = document.createElement("span");
+    label.className = "speaker";
+    label.textContent = `${speaker}:`;
+    p.appendChild(label);
+  }
+  p.appendChild(document.createTextNode(clean));
+  transcriptPane.appendChild(p);
+  transcriptPane.scrollTop = transcriptPane.scrollHeight;
+  appendToFile(speaker ? `**[${ts}] ${speaker}:** ${clean}` : `**[${ts}]** ${clean}`);
+}
+
+function commitDiarizedWords(words, fallbackText) {
+  const items = Array.isArray(words) ? words : [];
+  const hasSpeakerIds = items.some((item) => item && item.speaker_id);
+  if (!hasSpeakerIds) {
+    commitSegment(fallbackText);
+    return;
+  }
+  const groups = [];
+  let currentSpeaker = "";
+  let currentText = "";
+  const flush = () => {
+    if (currentText.trim()) groups.push({speaker: speakerLabel(currentSpeaker), text: currentText});
+    currentText = "";
+  };
+  items.forEach((item) => {
+    if (!item) return;
+    const nextSpeaker = item.speaker_id || currentSpeaker;
+    if (item.speaker_id && currentSpeaker && nextSpeaker !== currentSpeaker) flush();
+    if (item.speaker_id) currentSpeaker = item.speaker_id;
+    currentText += item.text || "";
+  });
+  flush();
+  groups.forEach((group) => commitSegment(group.text, group.speaker));
+}
+
+// ---------- Browser speech engine ----------
+function startBrowserEngine() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR || window.pywebview) {
+    setStatus("Browser speech needs Chrome or Edge (browser window).", false);
+    return false;
+  }
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = "en-US";
+  recognition.onresult = (event) => {
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const piece = event.results[i][0].transcript;
+      if (event.results[i].isFinal) commitSegment(piece);
+      else interim += piece;
+    }
+    showInterim(interim.trim());
+  };
+  recognition.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      setStatus("Microphone permission was blocked.", false);
+      roomActive = false;
+      updateToggleUI();
+    }
+  };
+  recognition.onend = () => {
+    clearInterim();
+    // Chrome ends recognition periodically; restart while the room ear is on.
+    if (roomActive && !paused) {
+      try { recognition.start(); return; } catch (e) {}
+      setTimeout(() => { if (roomActive && !paused && recognition) { try { recognition.start(); } catch (e) {} } }, 400);
+    }
+  };
+  try { recognition.start(); } catch (e) { return false; }
+  return true;
+}
+
+function stopBrowserEngine() {
+  if (recognition) { const r = recognition; recognition.onend = null; recognition = null; try { r.stop(); } catch (e) {} }
+  clearInterim();
+}
+
+// ---------- Local Whisper chunk engine (desktop-safe) ----------
+async function transcribeLocalChunk(blob) {
+  const start = await fetch("/api/transcription-jobs", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-SKATE-Filename": "spotter-live-chunk.webm",
+      "X-SKATE-Content-Type": blob.type || "audio/webm"
+    },
+    body: blob
+  });
+  const started = await start.json();
+  if (!start.ok || !started.ok) throw new Error(started.error || "Local transcription could not start.");
+  while (true) {
+    const response = await fetch(`/api/transcription-jobs/${encodeURIComponent(started.job_id)}`, {cache: "no-store"});
+    const job = await response.json();
+    if (!response.ok || !job.ok) throw new Error(job.error || "Local transcription progress was unavailable.");
+    if (job.status === "error") throw new Error(job.error || "Local transcription failed.");
+    if (job.status === "complete") return (job.transcript || "").trim();
+    if (roomActive && !paused && engineSelect.value === "local") {
+      setStatus(`${job.phase || "Transcribing local audio"} · ${job.progress || 0}%`, true);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  }
+}
+
+async function processLocalQueue() {
+  if (localQueueBusy) return;
+  localQueueBusy = true;
+  while (localQueue.length) {
+    const blob = localQueue.shift();
+    try {
+      const text = await transcribeLocalChunk(blob);
+      if (text) commitSegment(text);
+    } catch (error) {
+      setStatus(error && error.message ? error.message : "A local audio segment could not be transcribed.", false);
+    }
+  }
+  localQueueBusy = false;
+  if (roomActive && !paused && engineSelect.value === "local") {
+    setStatus("Listening locally · transcript appears in short segments…", true);
+  }
+}
+
+function startLocalRecorderChunk() {
+  if (!roomActive || paused || !localStream || localRecorder) return;
+  const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+  const chunks = [];
+  localRecorder = new MediaRecorder(localStream, {mimeType});
+  localRecorder.ondataavailable = (event) => { if (event.data && event.data.size) chunks.push(event.data); };
+  localRecorder.onstop = () => {
+    clearTimeout(localChunkTimer);
+    clearInterval(localCountdownTimer);
+    localChunkTimer = null;
+    localCountdownTimer = null;
+    localRecorder = null;
+    const blob = new Blob(chunks, {type: mimeType});
+    if (blob.size) {
+      localQueue.push(blob);
+      processLocalQueue();
+    }
+    if (roomActive && !paused && localStream) setTimeout(startLocalRecorderChunk, 40);
+  };
+  localRecorder.start();
+  const chunkSeconds = 6;
+  const chunkStartedAt = Date.now();
+  if (!localQueueBusy) setStatus(`Recording local segment · 0/${chunkSeconds}s`, true);
+  localCountdownTimer = setInterval(() => {
+    if (localQueueBusy || !roomActive || paused) return;
+    const elapsed = Math.min(chunkSeconds, Math.floor((Date.now() - chunkStartedAt) / 1000));
+    setStatus(`Recording local segment · ${elapsed}/${chunkSeconds}s`, true);
+  }, 500);
+  localChunkTimer = setTimeout(() => {
+    if (localRecorder && localRecorder.state === "recording") localRecorder.stop();
+  }, chunkSeconds * 1000);
+}
+
+async function startLocalEngine() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("This SKATE window cannot access local microphone recording.", false);
+    return false;
+  }
+  try {
+    localStream = await openConfiguredMicrophone();
+  } catch (error) {
+    setStatus("Microphone permission was blocked. Allow microphone access for SKATE in Windows Settings.", false);
+    return false;
+  }
+  startLocalRecorderChunk();
+  return true;
+}
+
+function stopLocalEngine() {
+  clearTimeout(localChunkTimer);
+  clearInterval(localCountdownTimer);
+  localChunkTimer = null;
+  localCountdownTimer = null;
+  if (localRecorder && localRecorder.state === "recording") {
+    try { localRecorder.stop(); } catch (e) {}
+  }
+  if (localStream) {
+    localStream.getTracks().forEach((track) => track.stop());
+    localStream = null;
+  }
+}
+
+// ---------- OpenAI realtime transcription (desktop-safe) ----------
+async function startOpenAIEngine() {
+  openAiConnectionError = "";
+  openAiDeltas.clear();
+  try {
+    micStream = await openConfiguredMicrophone();
+  } catch (e) {
+    setStatus("Microphone permission was blocked.", false);
+    return false;
+  }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws/spotter-live-openai-stt`);
+  ws.onmessage = (event) => {
+    let msg = {};
+    try { msg = JSON.parse(event.data); } catch (e) { return; }
+    if (msg.type === "conversation.item.input_audio_transcription.delta") {
+      const itemId = msg.item_id || "current";
+      const text = (openAiDeltas.get(itemId) || "") + (msg.delta || "");
+      openAiDeltas.set(itemId, text);
+      showInterim(text.trim());
+    } else if (msg.type === "conversation.item.input_audio_transcription.completed") {
+      const itemId = msg.item_id || "current";
+      commitSegment(msg.transcript || openAiDeltas.get(itemId) || "");
+      openAiDeltas.delete(itemId);
+    } else if (msg.type === "error") {
+      const detail = msg.error || {};
+      // Empty/short commits can occur during room silence; keep the ear alive.
+      if (!String(detail.code || "").includes("buffer")) {
+        openAiConnectionError = detail.message || "OpenAI Realtime transcription error.";
+        setStatus(openAiConnectionError, false);
+      }
+    }
+  };
+  ws.onclose = () => {
+    if (roomActive && !openAiConnectionError) setStatus("OpenAI Realtime connection closed unexpectedly.", false);
+  };
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+  const source = audioCtx.createMediaStreamSource(micStream);
+  processor = audioCtx.createScriptProcessor(4096, 1, 1);
+  processor.onaudioprocess = (event) => {
+    if (paused || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const f32 = event.inputBuffer.getChannelData(0);
+    const i16 = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i++) {
+      const s = Math.max(-1, Math.min(1, f32[i]));
+      i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    let bin = "";
+    const bytes = new Uint8Array(i16.buffer);
+    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    ws.send(JSON.stringify({type: "audio", audio: btoa(bin)}));
+  };
+  source.connect(processor);
+  processor.connect(audioCtx.destination);
+  openAiCommitTimer = setInterval(() => {
+    if (!paused && ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "commit"}));
+  }, 3000);
+  return true;
+}
+
+function stopOpenAIEngine() {
+  clearInterval(openAiCommitTimer);
+  openAiCommitTimer = null;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try { ws.send(JSON.stringify({type: "commit"})); } catch (e) {}
+  }
+  if (processor) { try { processor.disconnect(); } catch (e) {} processor = null; }
+  if (audioCtx) { try { audioCtx.close(); } catch (e) {} audioCtx = null; }
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+  if (ws) {
+    const socket = ws;
+    setTimeout(() => { try { socket.close(); } catch (e) {} }, 100);
+    ws = null;
+  }
+  openAiDeltas.clear();
+  clearInterim();
+}
+
+// ---------- ElevenLabs realtime engine ----------
+async function startElevenEngine() {
+  speakerLabels.clear();
+  pendingElevenCommit = "";
+  clearTimeout(pendingElevenCommitTimer);
+  try {
+    micStream = await openConfiguredMicrophone();
+  } catch (e) {
+    setStatus("Microphone permission was blocked.", false);
+    return false;
+  }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws/spotter-live-stt`);
+  ws.onmessage = (event) => {
+    let msg = {};
+    try { msg = JSON.parse(event.data); } catch (e) { return; }
+    if (msg.message_type === "partial_transcript") showInterim(msg.text || "");
+    else if (msg.message_type === "committed_transcript") {
+      pendingElevenCommit = msg.text || "";
+      clearTimeout(pendingElevenCommitTimer);
+      pendingElevenCommitTimer = setTimeout(() => {
+        if (pendingElevenCommit) commitSegment(pendingElevenCommit);
+        pendingElevenCommit = "";
+      }, 1500);
+    }
+    else if (msg.message_type === "committed_transcript_with_timestamps") {
+      clearTimeout(pendingElevenCommitTimer);
+      pendingElevenCommitTimer = null;
+      pendingElevenCommit = "";
+      commitDiarizedWords(msg.words, msg.text || "");
+    }
+    else if (msg.message_type === "error" || (msg.message_type || "").includes("error")) {
+      setStatus(msg.error || msg.message || "Realtime transcription error.", false);
+    }
+  };
+  ws.onclose = () => { if (roomActive) setStatus("Realtime connection closed.", false); };
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  const source = audioCtx.createMediaStreamSource(micStream);
+  processor = audioCtx.createScriptProcessor(4096, 1, 1);
+  processor.onaudioprocess = (event) => {
+    if (paused || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const f32 = event.inputBuffer.getChannelData(0);
+    const i16 = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i++) {
+      const s = Math.max(-1, Math.min(1, f32[i]));
+      i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    let bin = "";
+    const bytes = new Uint8Array(i16.buffer);
+    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    ws.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: btoa(bin), sample_rate: 16000 }));
+  };
+  source.connect(processor);
+  processor.connect(audioCtx.destination);
+  return true;
+}
+
+function stopElevenEngine() {
+  clearTimeout(pendingElevenCommitTimer);
+  pendingElevenCommitTimer = null;
+  if (pendingElevenCommit) commitSegment(pendingElevenCommit);
+  pendingElevenCommit = "";
+  if (processor) { try { processor.disconnect(); } catch (e) {} processor = null; }
+  if (audioCtx) { try { audioCtx.close(); } catch (e) {} audioCtx = null; }
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+  if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+  clearInterim();
+}
+
+// ---------- Start / stop ----------
+function updateToggleUI() {
+  const span = toggleBtn.querySelector("span");
+  const img = toggleBtn.querySelector("img");
+  if (!roomActive) {
+    span.textContent = "Start listening";
+    img.src = "/static/icons/record.svg?v=red1";
+    toggleBtn.disabled = false;
+  } else if (paused) {
+    span.textContent = "Paused for question…";
+    img.src = "/static/icons/pause.svg";
+    toggleBtn.disabled = true;
+  } else {
+    span.textContent = "Stop listening";
+    img.src = "/static/icons/pause.svg";
+    toggleBtn.disabled = false;
+  }
+}
+
+async function startRoom() {
+  if (!fileName) { fileName = newFileName(); filePill.textContent = "transcripts/" + fileName; }
+  const engine = engineSelect.value;
+  roomActive = true;
+  paused = false;
+  const ok = engine === "openai"
+    ? await startOpenAIEngine()
+    : engine === "elevenlabs"
+    ? await startElevenEngine()
+    : engine === "local"
+      ? await startLocalEngine()
+      : startBrowserEngine();
+  if (!ok) { roomActive = false; updateToggleUI(); return; }
+  updateToggleUI();
+  setStatus(engine === "local" ? "Listening locally · transcript appears in short segments…" : "Listening to the room…", true);
+}
+
+function stopRoom() {
+  const engine = engineSelect.value;
+  roomActive = false;
+  stopBrowserEngine();
+  stopLocalEngine();
+  if (engine === "openai") stopOpenAIEngine();
+  if (engine === "elevenlabs") stopElevenEngine();
+  updateToggleUI();
+  setStatus("Stopped. Transcript saved.", false);
+}
+
+toggleBtn.addEventListener("click", () => { if (roomActive) stopRoom(); else startRoom(); });
+
+function pauseRoom() {
+  paused = true;
+  if (engineSelect.value === "browser") stopBrowserEngine();
+  if (engineSelect.value === "local") stopLocalEngine();
+  if (engineSelect.value === "openai") stopOpenAIEngine();
+  if (engineSelect.value === "elevenlabs") stopElevenEngine();
+  updateToggleUI();
+  setStatus("Room paused — talk to " + AGENT_NAME + "…", false);
+}
+
+function resumeRoom() {
+  paused = false;
+  updateToggleUI();
+  if (!roomActive) { setStatus("Idle", false); return; }
+  if (engineSelect.value === "browser") startBrowserEngine();
+  if (engineSelect.value === "local") startLocalEngine();
+  if (engineSelect.value === "openai") startOpenAIEngine();
+  if (engineSelect.value === "elevenlabs") startElevenEngine();
+  setStatus(engineSelect.value === "local" ? "Listening locally · transcript appears in short segments…" : "Listening to the room…", true);
+}
+
+// ---------- Speak replies (same behavior as Spotter) ----------
+function speakBrowser(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1;
+  window.speechSynthesis.speak(u);
+}
+
+async function speak(text) {
+  if (!text) return;
+  let speakAloud = SPEAK_ALOUD_FALLBACK;
+  let ttsProvider = TTS_PROVIDER_FALLBACK;
+  try {
+    const r = await fetch("/api/voice-config");
+    if (r.ok) { const cfg = await r.json(); speakAloud = !!cfg.speak_aloud; ttsProvider = cfg.tts_provider || ttsProvider; }
+  } catch (e) {}
+  if (!speakAloud) return;
+  if (ttsProvider === "openai" || ttsProvider === "elevenlabs") {
+    try {
+      const res = await fetch("/api/speak", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text})
+      });
+      const ct = res.headers.get("content-type") || "";
+      if (res.ok && ct.includes("audio")) {
+        const blob = await res.blob();
+        const audio = new Audio(URL.createObjectURL(blob));
+        return new Promise((resolve) => {
+          audio.onended = () => { URL.revokeObjectURL(audio.src); resolve(); };
+          audio.play().catch(() => resolve());
+        });
+      }
+    } catch (err) {}
+  }
+  speakBrowser(text);
+}
+
+// ---------- Agent turns ----------
+function logQA(q, a) {
+  const div = document.createElement("div");
+  div.className = "qa";
+  const qEl = document.createElement("p"); qEl.className = "q"; qEl.textContent = "You: " + q;
+  const aEl = document.createElement("p"); aEl.className = "a"; aEl.textContent = a;
+  div.appendChild(qEl); div.appendChild(aEl);
+  agentLog.prepend(div);
+}
+
+async function askAgent(question, label) {
+  const q = (question || "").trim();
+  const shown = (label || q).trim();
+  if (!q || asking) return;
+  asking = true;
+  askSendBtn.disabled = true;
+  setStatus("Thinking…", false);
+  try {
+    const res = await fetch("/api/spotter-live/ask", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ question: q, file: fileName })
+    });
+    const data = await res.json();
+    if (!data.ok) { logQA(shown, data.error || "Spotter Live failed to answer."); return; }
+    logQA(shown, data.answer);
+    appendToFile(`> **Facilitator asked:** ${shown}\n>\n> **${AGENT_NAME} answered:** ${data.answer}`);
+    await speak(data.answer);
+  } catch (err) {
+    logQA(shown, "Spotter Live failed to answer. " + err);
+  } finally {
+    asking = false;
+    askSendBtn.disabled = false;
+    resumeRoom();
+  }
+}
+
+// Run a coaching stance directly against the room transcript (no spoken question).
+function runStance(modeId) {
+  const mode = MODE_BY_ID[modeId];
+  if (!mode || asking || capturing) return;
+  pauseRoom();
+  const question = (mode.prompt || mode.label) +
+    "\n\nApply this stance to the room transcript captured so far and report what you find.";
+  askAgent(question, mode.label + " (stance)");
+}
+
+askSendBtn.addEventListener("click", () => {
+  pauseRoom();
+  const q = askInput.value;
+  askInput.value = "";
+  askAgent(q);
+});
+askInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); askSendBtn.click(); }
+});
+
+// Voice question: pause the room, capture one utterance, send it.
+let qRecognition = null, qRecorder = null, qChunks = [], capturing = false;
+
+function setAskUI(on) {
+  capturing = on;
+  askVoiceBtn.classList.toggle("listening", on);
+  askVoiceBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  askVoiceBtn.querySelector("span").textContent = on ? "Stop & send" : "Hold a question";
+  askVoiceBtn.querySelector("img").src = on ? "/static/icons/stop-talking.svg" : "/static/icons/start-talking.svg";
+}
+
+async function startQuestionCapture() {
+  // One capture at a time: ignore extra clicks while a question is being
+  // captured or answered (double-starts produced duplicate questions).
+  if (capturing || asking || qRecognition || qRecorder) return;
+  pauseRoom();
+  setAskUI(true);
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SR && !window.pywebview) {
+    let captured = "";
+    qRecognition = new SR();
+    qRecognition.continuous = true;
+    qRecognition.interimResults = true;
+    qRecognition.lang = "en-US";
+    qRecognition.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const piece = event.results[i][0].transcript;
+        if (event.results[i].isFinal) captured += piece + " ";
+        else interim += piece;
+      }
+      askInput.value = (captured + interim).trim();
+    };
+    qRecognition.onend = () => {
+      qRecognition = null;
+      setAskUI(false);
+      const q = askInput.value.trim();
+      askInput.value = "";
+      if (q) askAgent(q); else resumeRoom();
+    };
+    try { qRecognition.start(); } catch (e) { qRecognition = null; setAskUI(false); resumeRoom(); }
+    return;
+  }
+  // No SR (app window): record then transcribe.
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { setStatus("Microphone permission was blocked.", false); setAskUI(false); resumeRoom(); return; }
+  qRecorder = new MediaRecorder(stream);
+  qChunks = [];
+  qRecorder.ondataavailable = (event) => qChunks.push(event.data);
+  qRecorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    setAskUI(false);
+    const blob = new Blob(qChunks, { type: qRecorder.mimeType || "audio/webm" });
+    qRecorder = null;
+    setStatus("Transcribing your question…", false);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        const res = await fetch("/api/transcribe-audio", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ filename: "spotter-live-question.webm", content_type: blob.type || "audio/webm", data: reader.result })
+        });
+        const data = await res.json();
+        if (data.ok && data.transcript) askAgent(data.transcript);
+        else { setStatus(data.error || "Could not transcribe the question.", false); resumeRoom(); }
+      } catch (err) { setStatus("Could not transcribe the question. " + err, false); resumeRoom(); }
+    };
+    reader.readAsDataURL(blob);
+  };
+  qRecorder.start();
+}
+
+function stopQuestionCapture() {
+  if (qRecognition) { try { qRecognition.stop(); } catch (e) {} return; }
+  if (qRecorder && qRecorder.state === "recording") qRecorder.stop();
+}
+
+askVoiceBtn.addEventListener("click", () => {
+  if (capturing) stopQuestionCapture();
+  else startQuestionCapture();
+});
+
+// Stream Deck Neo hotkeys (same map as Spotter, see streamdeck-neo-icons/HOTKEYS.md):
+// Ctrl+Alt+Shift+Space = start a spoken question (room pauses)
+// Ctrl+Alt+Shift+X     = stop & send the question
+// Ctrl+Alt+Shift+<stance key> = run that stance on the transcript immediately
+const stanceHotkeys = {
+  o: "observe",
+  f: "frame-challenge",
+  h: "hmw",
+  y: "five-whys",
+  k: "kaizen",
+  m: "process-map",
+  w: "find-waste",
+  z: "synthesize-notes",
+  t: "next-experiment",
+  r: "executive-readout",
+  q: "ask"
+};
+document.addEventListener("keydown", (event) => {
+  if (!(event.ctrlKey && event.altKey && event.shiftKey) || event.metaKey) return;
+  const keyName = event.key.toLowerCase();
+  if (event.code === "Space") {
+    event.preventDefault();
+    startQuestionCapture();
+  } else if (keyName === "x") {
+    event.preventDefault();
+    stopQuestionCapture();
+  } else if (stanceHotkeys[keyName]) {
+    event.preventDefault();
+    runStance(stanceHotkeys[keyName]);
+  }
+});
+
+window.addEventListener("beforeunload", () => { if (roomActive) stopRoom(); });
+</script>
+{% endblock %}

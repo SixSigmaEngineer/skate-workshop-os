@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SKATE{% endblock %}</title>
+  <link rel="icon" href="/favicon.ico?v=2">
+  <link rel="stylesheet" href="/static/style.css?v=20260725-lineup1">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      {% if logo_exists %}
+        <span class="brand-mark"><img src="/static/logo-rectangle.png" alt="SKATE logo"></span>
+      {% endif %}
+      <span class="brand-text">SKATE</span>
+    </a>
+    <nav class="icon-nav" aria-label="Primary">
+      <a href="/new" title="New Note" data-new-note-tab><img class="nav-icon" src="/static/icons/new.svg" alt=""><span>New Note</span></a>
+      <a href="/" title="Library"><img class="nav-icon" src="/static/icons/library.svg" alt=""><span>Library</span></a>
+      <a href="/sessions" title="Sessions"><img class="nav-icon" src="/static/icons/halfpipe.svg" alt=""><span>Sessions</span></a>
+      <a href="/lineup" title="The Lineup"><img class="nav-icon" src="/static/icons/lineup.svg" alt=""><span>Lineup</span></a>
+      <a href="/grind" title="Grind"><img class="nav-icon" src="/static/icons/grind.svg" alt=""><span>Grind</span></a>
+      <a href="/spotter" title="Spotter"><img class="nav-icon" src="/static/icons/spotter.svg" alt=""><span>Spotter</span></a>
+      <a href="/spotter-live" title="Spotter Live"><img class="nav-icon" src="/static/icons/mic.svg" alt=""><span>Spotter Live</span></a>
+      <a href="/stats" title="Stats"><img class="nav-icon" src="/static/icons/stats.svg" alt=""><span>Stats</span></a>
+      <a href="/about" title="About"><img class="nav-icon" src="/static/icons/about.svg" alt=""><span>About</span></a>
+      <a href="/settings" title="Settings"><img class="nav-icon" src="/static/icons/settings.svg" alt=""><span>Settings</span></a>
+    </nav>
+    <div class="top-tools">
+      <div class="zoom-controls" aria-label="Zoom controls">
+        <button type="button" data-zoom-step="-0.1" title="Zoom out"><img class="nav-icon" src="/static/icons/zoom-out.svg" alt=""><span>Zoom out</span></button>
+        <input class="zoom-slider" type="range" min="0.75" max="1.4" step="0.05" value="0.75" data-zoom-slider title="Zoom">
+        <button type="button" data-zoom-reset title="Reset zoom"><img class="nav-icon" src="/static/icons/zoom-reset.svg" alt=""><span>Reset zoom</span></button>
+        <button type="button" data-zoom-step="0.1" title="Zoom in"><img class="nav-icon" src="/static/icons/zoom-in.svg" alt=""><span>Zoom in</span></button>
+      </div>
+      <form class="top-search" method="get" action="/search">
+        <img class="nav-icon" src="/static/icons/search.svg" alt="">
+        <input name="q" placeholder="Search...">
+      </form>
+    </div>
+  </header>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="vault-meta">
+        <div>{{ total_entries | default(0) }} entries · memory tree</div>
+        <div>Vault: {{ vault_path }}</div>
+      </div>
+      <div class="sidebar-tabs">
+        <a href="/">Library</a>
+        <a href="/sessions">Sessions</a>
+        <a href="/lineup">The Lineup</a>
+      </div>
+      <div class="sidebar-heading"><h3>Sessions</h3><a href="/sessions/new">+</a></div>
+      <div class="stack">
+        {% for session in sessions[:10] %}
+          <a class="rowlink" href="/session/{{ session.key }}">{{ session.label }} <span>{{ session.count }}</span></a>
+        {% endfor %}
+      </div>
+      <div class="memory-tree">
+        <h3>Object Types</h3>
+        {% for key, meta in entry_types.items() %}
+          <a class="memory-tree-row" href="{% if key == 'action' %}/lineup{% else %}/grind?entry_type={{ key }}{% endif %}"><span>{{ meta.label }}</span></a>
+        {% endfor %}
+        <h3>Themes</h3>
+        {% for row in themes[:10] %}
+          <a class="memory-tree-row" href="/search?theme={{ row.theme }}"><span>{{ row.theme }}</span><em>{{ row.count }}</em></a>
+        {% else %}
+          <span class="muted">No themes captured yet.</span>
+        {% endfor %}
+      </div>
+    </aside>
+    <main class="content">
+      <div class="workspace-tabs" data-workspace-tabs hidden aria-label="Open note drafts"></div>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+  (() => {
+    const workspaceTabsKey = "skate-workspace-tabs-v1";
+    const workspaceDraftPrefix = "skate-note-draft-v1:";
+    const submittedTabKey = "skate-workspace-submitted-tab";
+    const tabsHost = document.querySelector("[data-workspace-tabs]");
+    const currentUrl = new URL(window.location.href);
+    const currentTabId = currentUrl.searchParams.get("tab") || "";
+    const readTabs = () => {
+      try {
+        const tabs = JSON.parse(localStorage.getItem(workspaceTabsKey) || "[]");
+        return Array.isArray(tabs) ? tabs.filter((tab) => tab && tab.id && tab.url) : [];
+      } catch (_) {
+        return [];
+      }
+    };
+    const writeTabs = (tabs) => localStorage.setItem(workspaceTabsKey, JSON.stringify(tabs));
+    const makeTabId = () => (globalThis.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const removeTab = (id, navigate = true) => {
+      const tabs = readTabs();
+      const index = tabs.findIndex((tab) => tab.id === id);
+      const remaining = tabs.filter((tab) => tab.id !== id);
+      writeTabs(remaining);
+      localStorage.removeItem(workspaceDraftPrefix + id);
+      if (navigate && currentTabId === id) {
+        const fallback = remaining[Math.max(0, Math.min(index - 1, remaining.length - 1))];
+        window.location.href = fallback ? fallback.url : "/";
+        return;
+      }
+      renderTabs();
+    };
+    const renderTabs = () => {
+      if (!tabsHost) return;
+      const tabs = readTabs();
+      tabsHost.replaceChildren();
+      tabsHost.hidden = tabs.length === 0;
+      tabs.forEach((tab, index) => {
+        const item = document.createElement("div");
+        item.className = "workspace-tab" + (tab.id === currentTabId ? " active" : "");
+        item.setAttribute("role", "group");
+
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "workspace-tab-open";
+        open.title = tab.title || `Untitled ${index + 1}`;
+        open.setAttribute("aria-current", tab.id === currentTabId ? "page" : "false");
+        const dot = document.createElement("span");
+        dot.className = "workspace-tab-dot";
+        const label = document.createElement("span");
+        label.className = "workspace-tab-label";
+        label.textContent = tab.title || `Untitled ${index + 1}`;
+        open.append(dot, label);
+        open.addEventListener("click", () => { window.location.href = tab.url; });
+
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "workspace-tab-close";
+        close.setAttribute("aria-label", `Close ${tab.title || "draft"}`);
+        close.textContent = "×";
+        close.addEventListener("click", () => removeTab(tab.id));
+        item.append(open, close);
+        tabsHost.append(item);
+      });
+
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "workspace-tab-add";
+      add.title = "Open another new note";
+      add.setAttribute("aria-label", "Open another new note");
+      add.textContent = "+";
+      add.addEventListener("click", () => createDraftTab());
+      tabsHost.append(add);
+    };
+    const createDraftTab = (sourceUrl = "/new") => {
+      const tabs = readTabs();
+      const id = makeTabId();
+      const url = new URL(sourceUrl, window.location.origin);
+      url.searchParams.set("tab", id);
+      const tab = {id, title: `Untitled ${tabs.length + 1}`, url: url.pathname + url.search};
+      tabs.push(tab);
+      writeTabs(tabs);
+      window.location.href = tab.url;
+    };
+    const renameTab = (id, title) => {
+      const tabs = readTabs();
+      const tab = tabs.find((item) => item.id === id);
+      if (!tab) return;
+      tab.title = String(title || "").trim() || `Untitled ${tabs.indexOf(tab) + 1}`;
+      writeTabs(tabs);
+      renderTabs();
+    };
+    window.SKATEWorkspace = {createDraftTab, renameTab, removeTab, draftPrefix: workspaceDraftPrefix};
+
+    const submittedTabId = sessionStorage.getItem(submittedTabKey);
+    if (submittedTabId && window.location.pathname.startsWith("/entry/")) {
+      sessionStorage.removeItem(submittedTabKey);
+      removeTab(submittedTabId, false);
+    }
+    if (window.location.pathname === "/new" && !currentTabId) {
+      createDraftTab(window.location.pathname + window.location.search);
+      return;
+    }
+    if (window.location.pathname === "/new" && currentTabId) {
+      const tabs = readTabs();
+      if (!tabs.some((tab) => tab.id === currentTabId)) {
+        tabs.push({id: currentTabId, title: `Untitled ${tabs.length + 1}`, url: window.location.pathname + window.location.search});
+        writeTabs(tabs);
+      }
+    }
+    document.querySelectorAll("[data-new-note-tab]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        createDraftTab(link.getAttribute("href") || "/new");
+      });
+    });
+    renderTabs();
+
+    const key = "skate-ui-zoom";
+    const clamp = (value) => Math.max(0.75, Math.min(1.4, value));
+    const apply = (value) => {
+      const zoom = clamp(value || 1);
+      document.documentElement.style.setProperty("--app-zoom", zoom);
+      document.body.style.zoom = zoom;
+      localStorage.setItem(key, String(zoom));
+      document.querySelectorAll("[data-zoom-slider]").forEach((slider) => {
+        slider.value = String(zoom);
+      });
+    };
+    const nativeStartupKey = "skate-native-zoom-initialized";
+    const nativeApp = Boolean(window.pywebview);
+    if (nativeApp && sessionStorage.getItem(nativeStartupKey) !== "1") {
+      apply(0.75);
+      sessionStorage.setItem(nativeStartupKey, "1");
+    } else {
+      apply(Number(localStorage.getItem(key)) || 0.75);
+    }
+    (() => {
+      const path = window.location.pathname;
+      document.querySelectorAll(".icon-nav a").forEach((link) => {
+        const href = link.getAttribute("href");
+        const active = href === "/" ? path === "/" : (path === href || path.startsWith(href + "/"));
+        if (active) link.setAttribute("aria-current", "page");
+      });
+    })();
+    document.querySelectorAll("[data-zoom-step]").forEach((button) => {
+      button.addEventListener("click", () => apply((Number(localStorage.getItem(key)) || 1) + Number(button.dataset.zoomStep)));
+    });
+    document.querySelectorAll("[data-zoom-reset]").forEach((button) => {
+      button.addEventListener("click", () => apply(1));
+    });
+    document.querySelectorAll("[data-zoom-slider]").forEach((slider) => {
+      slider.addEventListener("input", () => apply(Number(slider.value)));
+    });
+    const combo = (event) => event.ctrlKey && event.altKey && event.shiftKey && !event.metaKey;
+    const go = (url) => {
+      window.location.href = url;
+    };
+    document.addEventListener("keydown", (event) => {
+      if (!combo(event)) return;
+      const keyName = event.key.toLowerCase();
+      const routes = {
+        l: "/",
+        g: "/grind",
+        p: "/spotter",
+        s: "/sessions",
+        a: "/about",
+      };
+      if (keyName === "n") {
+        event.preventDefault();
+        createDraftTab();
+      } else if (routes[keyName]) {
+        event.preventDefault();
+        go(routes[keyName]);
+      } else if (event.key === "=" || event.key === "+") {
+        event.preventDefault();
+        apply((Number(localStorage.getItem(key)) || 1) + 0.1);
+      } else if (event.key === "-") {
+        event.preventDefault();
+        apply((Number(localStorage.getItem(key)) || 1) - 0.1);
+      } else if (event.key === "0") {
+        event.preventDefault();
+        apply(1);
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
