@@ -31,7 +31,7 @@
 
     <div class="provider-block" data-provider="openai">
       <div class="two">
-        <label>General GPT-5.6 model
+        <label>OpenAI model — General / GRIND
           <select name="model" id="model">
             {% for item in model_options["openai"] %}
               <option value="{{ item.id }}" {% if current_settings.model == item.id %}selected{% endif %}>{{ item.label }}</option>
@@ -45,7 +45,7 @@
       </label>
       {% set smod = current_settings.spotter_model or current_settings.model %}
       <div class="two">
-        <label>Spotter GPT-5.6 model
+        <label>OpenAI model — Spotter
           <select name="spotter_model" id="spotterModel">
             {% for item in model_options["openai"] %}
               <option value="{{ item.id }}" {% if smod == item.id %}selected{% endif %}>{{ item.label }}</option>
@@ -99,7 +99,7 @@
       </label>
       <label>Max tokens<input name="max_tokens" type="number" min="128" max="16000" step="128" value="{{ current_settings.max_tokens }}"></label>
     </div>
-    <p class="muted"><strong>GRIND uses the selections above.</strong> Reasoning effort applies to the OpenAI GPT-5.6 family; other providers use their own defaults.</p>
+    <p class="muted"><strong>GRIND uses the provider and model selected above.</strong> Reasoning effort applies to OpenAI models; other providers use their own defaults.</p>
     <script>
       (function () {
         var select = document.getElementById("llmProvider");
