@@ -148,9 +148,12 @@ foreach ($name in @("skills")) {
 foreach ($file in @("README.md", "LICENSE", "TECH_STACK.md")) {
     Copy-Item -LiteralPath (Join-Path $Root $file) -Destination (Join-Path $AppDir $file) -Force
 }
-foreach ($file in @("Configure SKATE MCP for Codex.bat", "Start SKATE MCP HTTP.bat")) {
+foreach ($file in @("Configure SKATE MCP for Codex.bat", "Configure SKATE MCP for Claude Desktop.bat", "Start SKATE MCP HTTP.bat")) {
     Copy-Item -LiteralPath (Join-Path $Root $file) -Destination (Join-Path $AppDir $file) -Force
 }
+$ToolsDir = Join-Path $AppDir "tools"
+New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
+Copy-Item -LiteralPath (Join-Path $Root "tools\configure_claude_desktop.ps1") -Destination (Join-Path $ToolsDir "configure_claude_desktop.ps1") -Force
 
 # --- Safety gate: fail the build if secrets or client content reached staging ---
 if (Get-ChildItem -Path $AppDir -Recurse -Filter "settings.json" -ErrorAction SilentlyContinue) {

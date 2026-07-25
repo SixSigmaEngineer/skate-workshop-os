@@ -86,7 +86,23 @@ OPENAI_MODEL_OPTIONS = [
     {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra — balanced"},
     {"id": "gpt-5.6-luna", "label": "GPT-5.6 Luna — efficient"},
 ]
-MODEL_OPTIONS = {"openai": OPENAI_MODEL_OPTIONS}
+ANTHROPIC_MODEL_OPTIONS = [
+    {"id": "claude-sonnet-5", "label": "Claude Sonnet 5 — balanced"},
+    {"id": "claude-opus-5", "label": "Claude Opus 5 — deep reasoning"},
+    {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5 — fast"},
+]
+MODEL_OPTIONS = {"openai": OPENAI_MODEL_OPTIONS, "anthropic": ANTHROPIC_MODEL_OPTIONS}
+
+# LLM provider selection. "none" runs SKATE with deterministic local
+# synthesis only; "lmstudio" talks to a local OpenAI-compatible server.
+LLM_PROVIDERS = ("none", "lmstudio", "openai", "anthropic", "openrouter")
+LLM_PROVIDER_LABELS = {
+    "none": "No AI — local synthesis only",
+    "lmstudio": "LM Studio — local LLM",
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "openrouter": "OpenRouter",
+}
 
 DEFAULT_SETTINGS = {
     "provider": "openai",
@@ -94,9 +110,13 @@ DEFAULT_SETTINGS = {
     "spotter_model": "",
     "spotter_reasoning_effort": "low",
     "reasoning_effort": "medium",
-    "api_keys": {"openai": "", "elevenlabs": ""},
+    "api_keys": {"openai": "", "anthropic": "", "openrouter": "", "elevenlabs": ""},
     "transcription_model": "base",
     "openai_base_url": "https://api.openai.com/v1",
+    "anthropic_model": "claude-sonnet-5",
+    "openrouter_model": "anthropic/claude-sonnet-5",
+    "lmstudio_base_url": "http://127.0.0.1:1234/v1",
+    "lmstudio_model": "",
     "max_tokens": 1920,
     "spotter_name": "Spotter",
     "spotter_subtitle": "Workshop coach",
@@ -295,7 +315,6 @@ def _load_settings() -> dict:
         "grind_model",
         "grind_reasoning_effort",
         "use_ai_synthesis",
-        "lmstudio_base_url",
     ):
         settings.pop(deprecated_key, None)
     # Automatically neutralize the legacy company-specific Spotter identity
@@ -314,10 +333,17 @@ def _load_settings() -> dict:
             SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         except OSError:
             pass
-    settings["provider"] = "openai"
+    if settings.get("provider") not in LLM_PROVIDERS:
+        settings["provider"] = "openai"
     valid_models = {m["id"] for m in OPENAI_MODEL_OPTIONS}
     if settings.get("model") not in valid_models:
         settings["model"] = "gpt-5.6"
+    valid_anthropic = {m["id"] for m in ANTHROPIC_MODEL_OPTIONS}
+    if settings.get("anthropic_model") not in valid_anthropic:
+        settings["anthropic_model"] = "claude-sonnet-5"
+    settings["openrouter_model"] = str(settings.get("openrouter_model") or "").strip() or DEFAULT_SETTINGS["openrouter_model"]
+    settings["lmstudio_base_url"] = str(settings.get("lmstudio_base_url") or "").strip() or DEFAULT_SETTINGS["lmstudio_base_url"]
+    settings["lmstudio_model"] = str(settings.get("lmstudio_model") or "").strip()
     reasoning_efforts = {"none", "low", "medium", "high", "xhigh", "max"}
     for key, fallback in (
         ("reasoning_effort", "medium"),
@@ -351,14 +377,29 @@ def _public_settings(settings: dict) -> dict:
     public = dict(settings)
     public["api_key_present"] = {
         provider: bool(settings.get("api_keys", {}).get(provider))
-        for provider in ("openai", "elevenlabs")
+        for provider in ("openai", "anthropic", "openrouter", "elevenlabs")
     }
     public.pop("api_keys", None)
     return public
 
 
 def _llm_available(settings: dict) -> bool:
-    return bool(settings.get("api_keys", {}).get("openai"))
+    """True when the selected provider can serve AI synthesis."""
+    provider = settings.get("provider", "openai")
+    if provider == "none":
+        return False
+    if provider == "lmstudio":
+        return True  # local server; reachability is checked at call time
+    return bool(settings.get("api_keys", {}).get(provider))
+
+
+def _llm_unavailable_reason(settings: dict) -> str:
+    """Human-readable reason used when SKATE falls back to local synthesis."""
+    provider = settings.get("provider", "openai")
+    if provider == "none":
+        return "AI synthesis is turned off in Settings"
+    label = LLM_PROVIDER_LABELS.get(provider, provider)
+    return f"No {label} API key is saved"
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -690,14 +731,17 @@ def _elevenlabs_tts(text: str, api_key: str, voice_id: str, model_id: str) -> by
 
 
 def _feature_settings(settings: dict, feature: str) -> dict:
-    """Return OpenAI settings with a feature-specific GPT-5.6 model and effort."""
+    """Return settings with a feature-specific model and effort override.
+
+    Feature model overrides (e.g. a lower-latency Spotter model) apply to the
+    OpenAI provider; other providers use their own configured model.
+    """
     model = str(settings.get(f"{feature}_model") or "").strip()
     reasoning_effort = str(settings.get(f"{feature}_reasoning_effort") or "").strip()
     if not model and not reasoning_effort:
         return settings
     eff = dict(settings)
-    eff["provider"] = "openai"
-    if model:
+    if model and settings.get("provider", "openai") == "openai":
         eff["model"] = model
     if reasoning_effort:
         eff["reasoning_effort"] = reasoning_effort
@@ -705,21 +749,112 @@ def _feature_settings(settings: dict, feature: str) -> dict:
 
 
 def _grind_settings(settings: dict) -> dict:
-    """Use the configured General GPT-5.6 model and reasoning for GRIND."""
-    eff = dict(settings)
-    eff["provider"] = "openai"
-    return eff
+    """Use the configured General model and reasoning for GRIND."""
+    return dict(settings)
+
+
+def _active_model(settings: dict) -> str:
+    """The model id in effect for the selected provider."""
+    provider = settings.get("provider", "openai")
+    if provider == "anthropic":
+        return str(settings.get("anthropic_model") or "claude-sonnet-5")
+    if provider == "openrouter":
+        return str(settings.get("openrouter_model") or "").strip()
+    if provider == "lmstudio":
+        return str(settings.get("lmstudio_model") or "").strip()
+    return str(settings.get("model") or "gpt-5.6")
+
+
+def _chat_completions(base_url: str, headers: dict, model: str, prompt: str, max_out: int) -> str:
+    """Call an OpenAI-compatible chat completions endpoint (OpenRouter, LM Studio)."""
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_out,
+        "response_format": {"type": "json_object"},
+    }
+    try:
+        response = _post_json(f"{base_url}/chat/completions", headers, payload)
+    except ValueError:
+        # Some models/servers reject the JSON-format hint; retry plain.
+        payload.pop("response_format", None)
+        response = _post_json(f"{base_url}/chat/completions", headers, payload)
+    choices = response.get("choices") or []
+    if not choices:
+        raise ValueError("The model returned no choices.")
+    return str((choices[0].get("message") or {}).get("content") or "")
+
+
+def _lmstudio_default_model(base_url: str) -> str:
+    """Ask a local LM Studio server which model is loaded."""
+    request = UrlRequest(f"{base_url}/models", headers={"Accept": "application/json"})
+    with urlopen(request, timeout=10) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    models = data.get("data") or []
+    if not models:
+        raise ValueError("LM Studio is running but no model is loaded.")
+    return str(models[0].get("id") or "")
 
 
 def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
     provider = settings.get("provider", "openai")
-    model = model or settings["model"]
+    if provider == "none":
+        raise ValueError("AI synthesis is turned off in Settings.")
+    model = model or _active_model(settings)
     api_key = settings.get("api_keys", {}).get(provider, "")
     max_tokens = int(settings.get("max_tokens", 1920))
-    if provider != "openai":
-        raise ValueError("SKATE currently supports OpenAI GPT-5.6 only.")
-    if not api_key:
-        raise ValueError("Missing OpenAI API key.")
+    if provider not in {"openai", "anthropic", "openrouter", "lmstudio"}:
+        raise ValueError(f"Unknown LLM provider: {provider}")
+    if provider in {"openai", "anthropic", "openrouter"} and not api_key:
+        raise ValueError(f"Missing {LLM_PROVIDER_LABELS.get(provider, provider)} API key.")
+    # Reasoning-capable models spend part of the budget on hidden reasoning,
+    # so give every provider the same output headroom GRIND needs for JSON.
+    out_tokens = max(max_tokens, 6000)
+
+    if provider == "anthropic":
+        payload = {
+            "model": model,
+            "max_tokens": out_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        response = _post_json("https://api.anthropic.com/v1/messages", headers, payload)
+        parts = [
+            block.get("text", "")
+            for block in response.get("content", [])
+            if block.get("type") == "text"
+        ]
+        text = "\n".join(part for part in parts if part)
+        if not text:
+            raise ValueError("Anthropic returned no text content.")
+        return text
+
+    if provider == "openrouter":
+        if not model:
+            raise ValueError("Set an OpenRouter model id in Settings (for example anthropic/claude-sonnet-5).")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/SixSigmaEngineer/skate-workshop-os",
+            "X-Title": "SKATE",
+        }
+        return _chat_completions("https://openrouter.ai/api/v1", headers, model, prompt, out_tokens)
+
+    if provider == "lmstudio":
+        base_url = str(settings.get("lmstudio_base_url") or "http://127.0.0.1:1234/v1").rstrip("/")
+        try:
+            if not model:
+                model = _lmstudio_default_model(base_url)
+            return _chat_completions(base_url, {"Content-Type": "application/json"}, model, prompt, out_tokens)
+        except (URLError, TimeoutError, ConnectionError, OSError) as e:
+            raise ValueError(
+                f"Could not reach LM Studio at {base_url}. Start LM Studio, load a model, "
+                f"and enable the local server. ({e})"
+            ) from e
 
     if provider == "openai":
         base_url = str(settings.get("openai_base_url") or "https://api.openai.com/v1").rstrip("/")
@@ -768,29 +903,34 @@ def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
                     parts.append(content["text"])
         return "\n".join(parts)
 
-    raise ValueError("SKATE currently supports OpenAI GPT-5.6 only.")
+    raise ValueError(f"Unknown LLM provider: {provider}")
 
 
 def _grind_insights(entries, graph: dict) -> dict:
     settings = _load_settings()
     grind_settings = _grind_settings(settings)
+    provider = grind_settings.get("provider", "openai")
     local = design_insights(entries, graph)
     local["mode"] = "local"
-    local["provider"] = "openai"
-    local["model"] = grind_settings.get("model", "gpt-5.6")
+    local["provider"] = provider
+    local["model"] = _active_model(grind_settings)
     local["reasoning_effort"] = grind_settings.get("reasoning_effort", "medium")
     local["error"] = ""
 
     if not _llm_available(grind_settings):
-        local["error"] = "No OpenAI API key is saved; showing local synthesis."
+        if provider == "none":
+            local["error"] = ""
+            local["notice"] = "AI synthesis is off; showing SKATE's local synthesis."
+        else:
+            local["error"] = f"{_llm_unavailable_reason(grind_settings)}; showing local synthesis."
         return local
 
     try:
         text = _call_llm(grind_settings, _synthesis_prompt(entries, graph))
         ai = _normalize_ai_insights(_extract_json_object(text), entries)
         ai["mode"] = "ai"
-        ai["provider"] = "openai"
-        ai["model"] = grind_settings.get("model", "gpt-5.6")
+        ai["provider"] = provider
+        ai["model"] = _active_model(grind_settings)
         ai["reasoning_effort"] = grind_settings.get("reasoning_effort", "medium")
         ai["error"] = ""
         ai["marker_counts"] = local.get("marker_counts", {})
@@ -2334,7 +2474,7 @@ async def classify_note(request: Request):
         return {
             "ok": True,
             "suggestion": fallback,
-            "message": "No OpenAI API key is saved, so SKATE used a local suggestion.",
+            "message": f"{_llm_unavailable_reason(settings)}, so SKATE used a local suggestion.",
         }
 
     try:
@@ -2371,7 +2511,7 @@ async def compress_note(request: Request):
             "ok": True,
             "compression": fallback,
             "markdown": markdown_block,
-            "message": "No OpenAI API key is saved, so SKATE used local compression.",
+            "message": f"{_llm_unavailable_reason(settings)}, so SKATE used local compression.",
         }
 
     try:
@@ -2688,7 +2828,7 @@ async def summarize_transcript(request: Request):
             "ok": True,
             "summary": fallback,
             "markdown": _transcript_summary_markdown(fallback),
-            "message": "No OpenAI API key is saved, so SKATE used local transcript summarization.",
+            "message": f"{_llm_unavailable_reason(settings)}, so SKATE used local transcript summarization.",
         }
 
     try:
@@ -2770,11 +2910,11 @@ async def spotter_api(request: Request):
             response_text = _call_llm(_feature_settings(settings, "spotter"), _spotter_prompt(mode, text, session_label or session, session_context, settings))
             result = _normalize_spotter_response(_extract_json_object(response_text), fallback, mode)
             result["provider"] = settings["provider"]
-            result["model"] = settings["model"]
+            result["model"] = _active_model(_feature_settings(settings, "spotter"))
         except (ValueError, KeyError, json.JSONDecodeError, HTTPError, URLError, TimeoutError, OSError) as e:
             message = f"AI Spotter coaching failed, so SKATE used local coaching. {e}"
     else:
-        message = "No OpenAI API key is saved, so SKATE used local Spotter coaching."
+        message = f"{_llm_unavailable_reason(settings)}, so SKATE used local Spotter coaching."
 
     markdown_body = _spotter_markdown(result)
     create_url = "/new?" + urlencode(
@@ -2912,7 +3052,7 @@ async def spotter_live_ask(request: Request):
 
     settings = _load_settings()
     if not _llm_available(settings):
-        return {"ok": False, "error": "No OpenAI API key is saved, so Spotter Live cannot answer."}
+        return {"ok": False, "error": f"{_llm_unavailable_reason(settings)}, so Spotter Live cannot answer."}
 
     name = settings.get("spotter_name", "Spotter")
     persona = settings.get("spotter_persona", "")
@@ -3301,8 +3441,15 @@ async def save_settings(request: Request):
     if model not in valid_models:
         model = "gpt-5.6"
 
-    settings["provider"] = "openai"
+    provider = str(form.get("provider", settings.get("provider", "openai"))).strip()
+    settings["provider"] = provider if provider in LLM_PROVIDERS else "openai"
     settings["model"] = model
+    anthropic_model = str(form.get("anthropic_model", settings.get("anthropic_model", ""))).strip()
+    valid_anthropic = {item["id"] for item in ANTHROPIC_MODEL_OPTIONS}
+    settings["anthropic_model"] = anthropic_model if anthropic_model in valid_anthropic else "claude-sonnet-5"
+    settings["openrouter_model"] = str(form.get("openrouter_model", settings.get("openrouter_model", ""))).strip() or DEFAULT_SETTINGS["openrouter_model"]
+    settings["lmstudio_base_url"] = str(form.get("lmstudio_base_url", settings.get("lmstudio_base_url", ""))).strip() or DEFAULT_SETTINGS["lmstudio_base_url"]
+    settings["lmstudio_model"] = str(form.get("lmstudio_model", settings.get("lmstudio_model", ""))).strip()
     spotter_model = str(form.get("spotter_model", settings.get("spotter_model", ""))).strip()
     settings["spotter_model"] = spotter_model if spotter_model in valid_models else ""
     reasoning_efforts = {"none", "low", "medium", "high", "xhigh", "max"}
@@ -3347,10 +3494,10 @@ async def save_settings(request: Request):
     except (TypeError, ValueError):
         settings["streamdeck_port"] = 3030
     settings["streamdeck_auto_send"] = _checked(form.get("streamdeck_auto_send"))
-    settings.setdefault("api_keys", {}).setdefault("openai", "")
-    settings.setdefault("api_keys", {}).setdefault("elevenlabs", "")
+    for key_provider in ("openai", "anthropic", "openrouter", "elevenlabs"):
+        settings.setdefault("api_keys", {}).setdefault(key_provider, "")
 
-    for key_provider in ("openai", "elevenlabs"):
+    for key_provider in ("openai", "anthropic", "openrouter", "elevenlabs"):
         if _checked(form.get(f"clear_{key_provider}_api_key")):
             settings["api_keys"][key_provider] = ""
             continue

@@ -45,7 +45,7 @@ flowchart LR
     A["Workshop conversation"] --> B["Spotter captures signals"]
     B --> C["Governed Markdown memory"]
     C --> D["Hybrid evidence retrieval"]
-    D --> E["LLM reasoning (OpenAI Responses API)"]
+    D --> E["LLM reasoning (your provider, local, or none)"]
     E --> F["The GRIND"]
     F --> G["Ranked pain points, HMW prompts, and solution starters"]
 ```
@@ -69,9 +69,11 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 | Live transcription and spoken agent talk-back (OpenAI realtime voice) | Working |
 | Local Whisper and optional ElevenLabs speaker diarization | Working |
 | 2D/3D knowledge graph and Excel export | Working |
-| GRIND design-thinking synthesis via the OpenAI Responses API | Working |
+| GRIND design-thinking synthesis | Working |
+| Choice of AI provider: OpenAI, Anthropic, OpenRouter, local LM Studio, or no AI at all | Working — new for this hackathon |
 | The Lineup for flexible, session-linked, and recurring Standard Work actions | Working — new for this hackathon |
 | Read-only MCP server for MCP-enabled agents (STDIO and Streamable HTTP) | Working |
+| One-click MCP setup for both Codex/ChatGPT desktop and Claude Desktop | Working — new for this hackathon |
 | Windows installer with bundled MCP executable | Working |
 
 ## Six core capabilities
@@ -105,7 +107,7 @@ flowchart LR
     W["Workshop"] --> S["Spotter + physical HMI"]
     S --> M["Markdown/YAML memory"]
     M --> R["Lexical + optional semantic retrieval"]
-    R --> O["OpenAI Responses API"]
+    R --> O["Provider layer: OpenAI, Anthropic, OpenRouter, LM Studio, or none"]
     O --> G["LLM reasoning"]
     G --> D["The GRIND"]
     D --> X["Traceable ideas and exports"]
@@ -116,11 +118,25 @@ flowchart LR
 
 The local vault remains the source of truth. Search indexes and embeddings are rebuildable acceleration layers, not proprietary memory. Cloud services are explicit and optional except when the user requests their capabilities.
 
+## Bring your own AI — or none at all
+
+SKATE is deliberately not locked to any AI vendor. Pick the reasoning engine that fits your privacy posture and budget in Settings:
+
+| Provider | What it means |
+|---|---|
+| **No AI** | Every non-model feature still works: capture, governance, retrieval, graphs, The Lineup, exports, and a deterministic local synthesis. Nothing ever leaves the machine. |
+| **LM Studio** | A local LLM on your own hardware through LM Studio's OpenAI-compatible server. Private reasoning, no API key. |
+| **OpenAI** | GPT-5.6 family through the Responses API, with selectable reasoning effort. |
+| **Anthropic** | Claude Sonnet, Opus, or Haiku through the Messages API. |
+| **OpenRouter** | Any hosted model — Claude, GPT, Gemini, Llama, Mistral — with a single key. |
+
+The same vendor-agnostic stance applies to agent access: the installer can register SKATE's MCP server with **Codex/ChatGPT desktop and Claude Desktop** in one click each.
+
 ## AI reasoning: synthesis, not summarization
 
 The central AI task in SKATE is not "summarize this meeting." It is a constrained, evidence-heavy reasoning problem across multiple notes: recognize recurring tensions, distinguish observations from proposed solutions, preserve source traceability, reframe problems without embedding a preferred answer, and generate concrete starting points for experimentation.
 
-The reasoning pipeline (implemented in [`ui/app.py`](ui/app.py), routed through the OpenAI Responses API):
+The reasoning pipeline (implemented in [`ui/app.py`](ui/app.py), routed through the provider selected in Settings):
 
 1. **GRIND synthesis** reads the active evidence in a selected session.
 2. **Pattern detection** identifies repeated pains, unmet needs, risks, and contradictions.
@@ -181,8 +197,8 @@ Available tools:
 
 ### Connect SKATE memory to an agent
 
-- **Installed app:** select the MCP option in the installer, or run `Configure SKATE MCP for Codex.bat` from the installation folder, then restart your MCP-enabled desktop client.
-- **Source checkout:** run `Configure SKATE MCP for Codex.bat` after the Python environment has been created by `Start SKATE.bat`.
+- **Installed app:** check the Codex and/or Claude Desktop boxes in the installer, or run `Configure SKATE MCP for Codex.bat` / `Configure SKATE MCP for Claude Desktop.bat` from the installation folder, then restart the desktop client.
+- **Source checkout:** run either configure script after the Python environment has been created by `Start SKATE.bat`.
 - **Hosted/web agents:** run `Start SKATE MCP HTTP.bat`, keep the endpoint private at `http://127.0.0.1:8766/mcp`, and connect it through an authenticated HTTPS tunnel. Never expose the unauthenticated local endpoint directly to the internet.
 - **Test prompts:** ask the agent to list active sessions, search for bounded evidence, trace relationships around a pain point, or retrieve the latest GRIND output. MCP returns only requested governed evidence; it does not upload the full vault by default.
 
@@ -245,7 +261,7 @@ cd skate-workshop-os
 
 Then double-click **`Start SKATE.bat`**. On first run it creates a private `.venv`, installs the required packages, starts the local service, and opens the SKATE native app window. Use **`Stop SKATE.bat`** to stop the local service.
 
-Open **Settings** and add an OpenAI API key. That single key powers AI reasoning, live transcription, recording transcription, and spoken agent responses. An ElevenLabs key is optional and is only needed when speaker diarization is desired. For fully local transcription, run **`Install Local Whisper.bat`** once and restart SKATE.
+Open **Settings** and choose an AI provider — OpenAI, Anthropic, OpenRouter, a local LM Studio server, or **No AI** for a fully offline experience. An OpenAI key additionally powers live transcription and spoken agent responses; an ElevenLabs key is optional and only needed for speaker diarization. For fully local transcription, run **`Install Local Whisper.bat`** once and restart SKATE.
 
 ### Manual development run
 
@@ -261,7 +277,7 @@ The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `
 
 | Capability | Requirement |
 |---|---|
-| GRIND and Spotter reasoning | OpenAI API key |
+| GRIND and Spotter reasoning | OpenAI, Anthropic, or OpenRouter API key — or LM Studio locally, or none |
 | Local audio/video transcription | Local Whisper installation |
 | Live transcript and spoken Spotter responses | OpenAI API key (realtime voice models) |
 | Optional realtime speaker diarization | ElevenLabs API key and Scribe Realtime |
@@ -284,7 +300,7 @@ The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `
 | Layer | Technology |
 |---|---|
 | Application | Python, FastAPI, Jinja2, pywebview |
-| AI reasoning | OpenAI Responses API (GPT-5.6 family) |
+| AI reasoning | Selectable: OpenAI (Responses API), Anthropic (Messages API), OpenRouter, local LM Studio, or none |
 | Memory | Markdown, YAML frontmatter, typed relationships |
 | Retrieval | Weighted lexical scoring, optional FastEmbed or Ollama embeddings |
 | Speech | OpenAI realtime transcription and voice; Local Whisper fallback; optional ElevenLabs diarization |

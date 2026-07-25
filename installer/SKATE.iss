@@ -25,7 +25,8 @@ LicenseFile=..\LICENSE
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
-Name: "connectcodex"; Description: "Connect SKATE memory to Codex and ChatGPT desktop (recommended)"; GroupDescription: "AI agent connection:"
+Name: "connectcodex"; Description: "Connect SKATE memory to Codex and ChatGPT desktop"; GroupDescription: "AI agent connection:"
+Name: "connectclaude"; Description: "Connect SKATE memory to Claude Desktop"; GroupDescription: "AI agent connection:"
 
 [Files]
 Source: "..\build\app-staging\SKATE\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -37,4 +38,5 @@ Name: "{autodesktop}\SKATE"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopic
 
 [Run]
 Filename: "{app}\Configure SKATE MCP for Codex.bat"; Description: "Connect SKATE memory to Codex"; Flags: postinstall shellexec skipifsilent; Tasks: connectcodex
+Filename: "{app}\Configure SKATE MCP for Claude Desktop.bat"; Description: "Connect SKATE memory to Claude Desktop"; Flags: postinstall shellexec skipifsilent; Tasks: connectclaude
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch SKATE"; Flags: nowait postinstall skipifsilent

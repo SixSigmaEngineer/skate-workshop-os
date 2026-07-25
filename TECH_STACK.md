@@ -9,7 +9,7 @@ A plain-language tour of what SKATE is built with and *why*. The guiding princip
 | Decision | Current direction | Steering guidance |
 |---|---|---|
 | Product category | Productivity and enterprise solutions | Lead with workshop synthesis, decision continuity, and organizational learning. |
-| Primary AI path | OpenAI GPT-5.6 through the Responses API | Use it for typed memory candidates, relationship extraction, contradiction detection, and traceable synthesis. This build intentionally has no alternate LLM route. |
+| Primary AI path | Selectable provider: OpenAI (Responses API), Anthropic (Messages API), OpenRouter, local LM Studio, or none | Use it for typed memory candidates, relationship extraction, contradiction detection, and traceable synthesis. "None" keeps SKATE fully functional with deterministic local synthesis. |
 | Coding workflow | AI-assisted development | Preserve meaningful sessions, commits, tests, and design decisions as engineering evidence. |
 | Durable storage | Local Markdown + YAML frontmatter | Keep it. This is central to trust, portability, inspectability, and an Obsidian-compatible experience. |
 | Web application | FastAPI + Jinja2 + vanilla JavaScript | Keep it for the hackathon. A React/Electron rewrite would add risk without strengthening the core story. |
@@ -100,7 +100,7 @@ A `--browser` flag opens it in the default browser instead, and `--reload` runs 
 
 ## AI: language models
 
-SKATE's hackathon build uses one deliberate LLM path: **OpenAI GPT-5.6 through the Responses API**. The General model and reasoning selections route GRIND through Sol, Terra, or Luna at the chosen effort level. Spotter can use a separate GPT-5.6 model and reasoning level when lower latency is preferred during live facilitation.
+SKATE routes reasoning through a **selectable provider layer**: OpenAI GPT-5.6 (Responses API, with explicit reasoning effort), Anthropic Claude (Messages API), OpenRouter (any hosted model over an OpenAI-compatible endpoint), a local LM Studio server (OpenAI-compatible, fully on-machine), or **no AI at all** — in which case GRIND falls back to SKATE's deterministic local synthesis. With OpenAI selected, Spotter can use a separate GPT-5.6 model and reasoning level when lower latency is preferred during live facilitation.
 
 Every Spotter response is built from a fixed base persona + a per-stance instruction + retrieved session notes, and returns structured JSON (spoken response, title, evidence, insights, recommendations, actions, questions, relationships).
 
