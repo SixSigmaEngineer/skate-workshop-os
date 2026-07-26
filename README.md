@@ -42,7 +42,7 @@
 | **Category** | **Productivity & Enterprise Solutions** |
 | **Also relevant to** | Artificial Intelligence & Machine Learning |
 | **Team** | Kyle Kramer (solo) |
-| **Built during the hackathon period** | The Lineup (action management), vendor-agnostic AI provider selection (OpenAI, Anthropic, OpenRouter, LM Studio, or none), Claude Desktop MCP setup, reasoning-effort mapping across providers, skater levels on the Stats page, refreshed Harborlight demo vault, and this documentation |
+| **Release** | v1.0 — first public release of SKATE |
 
 ---
 
