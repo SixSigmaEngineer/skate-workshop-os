@@ -40,7 +40,6 @@
 |---|---|
 | **Event** | [Orion Global Hackathon 2026](https://orionhackathon.devpost.com/) — Where Operations Research Meets Innovation |
 | **Category** | **Productivity & Enterprise Solutions** |
-| **Also relevant to** | Artificial Intelligence & Machine Learning |
 | **Team** | Kyle Kramer (solo) |
 | **Release** | v1.0 — first public release of SKATE |
 
