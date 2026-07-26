@@ -40,7 +40,6 @@
 |---|---|
 | **Event** | [Orion Global Hackathon 2026](https://orionhackathon.devpost.com/) — Where Operations Research Meets Innovation |
 | **Category** | **Productivity & Enterprise Solutions** |
-| **Team** | Kyle Kramer (solo) |
 | **Release** | v1.0 — first public release of SKATE |
 
 ---
@@ -350,10 +349,6 @@ skate-workshop-os/
 - Deeper analytics: frequency, co-occurrence, and trend views over typed signals to support prioritization.
 - macOS and Linux launchers.
 - Write-capable MCP tools with explicit human approval gates.
-
-## Team
-
-Built by **Kyle Kramer** — a continuous-improvement practitioner who facilitates real operations workshops and built SKATE to fix the evidence-loss problem he lives with every week. The problem framing, facilitation philosophy, memory architecture, physical interface, and product decisions come from that practice; AI-assisted development accelerated the implementation, and LLM reasoning powers the product's synthesis at runtime.
 
 ## License
 
