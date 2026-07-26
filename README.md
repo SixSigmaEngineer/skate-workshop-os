@@ -34,6 +34,18 @@
 
 ---
 
+## Hackathon submission
+
+| | |
+|---|---|
+| **Event** | [Orion Global Hackathon 2026](https://orionhackathon.devpost.com/) — Where Operations Research Meets Innovation |
+| **Category** | **Productivity & Enterprise Solutions** |
+| **Also relevant to** | Artificial Intelligence & Machine Learning |
+| **Team** | Kyle Kramer (solo) |
+| **Built during the hackathon period** | The Lineup (action management), vendor-agnostic AI provider selection (OpenAI, Anthropic, OpenRouter, LM Studio, or none), Claude Desktop MCP setup, reasoning-effort mapping across providers, skater levels on the Stats page, refreshed Harborlight demo vault, and this documentation |
+
+---
+
 ## The problem
 
 Operations improvement lives and dies in workshops: kaizen events, root-cause sessions, design-thinking sprints, voice-of-customer reviews. These sessions create some of an organization's most valuable knowledge — and some of its most disposable. Observations, decisions, pain points, quotes, and unanswered questions disappear into notebooks, raw meeting transcripts, and disconnected AI summaries. When a team revisits the work, it either starts over or sends an entire transcript back to a model and hopes the important evidence is still visible.
