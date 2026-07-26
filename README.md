@@ -22,6 +22,10 @@
 </p>
 
 <p align="center">
+  <a href="https://orionhackathon.devpost.com/"><img src="branding-images/Orion%20Global%20Hackathon.png" alt="Orion Global Hackathon" width="360"></a>
+</p>
+
+<p align="center">
   <strong><a href="https://orionhackathon.devpost.com/">OrionHackathon 2026</a> | Productivity &amp; Enterprise Solutions</strong><br>
   <a href="#">Demo video (link coming with submission)</a>
 </p>
@@ -347,3 +351,8 @@ SKATE is available under the [MIT License](LICENSE). Hardware components and thi
 ---
 
 **SKATE turns conversations into memory, memory into evidence, and evidence into better ideas.**
+
+<p align="center">
+  <img src="https://octodex.github.com/images/skatetocat.png" alt="Skatetocat" width="220"><br>
+  <sub><a href="https://octodex.github.com/skatetocat">Skatetocat</a> © GitHub, from the <a href="https://octodex.github.com/">Octodex</a></sub>
+</p>
