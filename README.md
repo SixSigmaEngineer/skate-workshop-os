@@ -72,6 +72,7 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 | GRIND design-thinking synthesis | Working |
 | Choice of AI provider: OpenAI, Anthropic, OpenRouter, local LM Studio, or no AI at all | Working — new for this hackathon |
 | The Lineup for flexible, session-linked, and recurring Standard Work actions | Working — new for this hackathon |
+| Skater levels: gamified progress from Grom to 900 Legend on the Stats page | Working — new for this hackathon |
 | Read-only MCP server for MCP-enabled agents (STDIO and Streamable HTTP) | Working |
 | One-click MCP setup for both Codex/ChatGPT desktop and Claude Desktop | Working — new for this hackathon |
 | Windows installer with bundled MCP executable | Working |
