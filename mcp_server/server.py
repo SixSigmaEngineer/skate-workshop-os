@@ -20,11 +20,17 @@ from mcp_server import service  # noqa: E402
 
 
 INSTRUCTIONS = """
-SKATE is a read-only workshop-memory server. Use search_memory for bounded,
+SKATE is a governed workshop-memory server. Use search_memory for bounded,
 governance-aware evidence retrieval. Use get_memory_object only when the full
 note is necessary, and trace_evidence when provenance or supporting/conflicting
-relationships matter. Never imply that inactive notes or inactive sessions
+relationships matter. Use get_lineup to see open and landed action items and
+recurring Standard Work. Never imply that inactive notes or inactive sessions
 were searched: they are deliberately excluded by the server.
+
+Write access is narrow and additive: add_note creates one new memory object
+with explicit agent provenance, and create_session creates a new empty
+session. Existing memory can never be edited or deleted through this server.
+Always tell the user what you added and include the returned memory_id.
 """.strip()
 
 
@@ -44,6 +50,12 @@ def create_server(host: str = "127.0.0.1", port: int = 8766) -> FastMCP:
         idempotentHint=True,
         openWorldHint=False,
     )
+    additive_write = ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
     server.tool(annotations=read_only)(service.server_info)
     server.tool(annotations=read_only)(service.list_active_sessions)
     server.tool(annotations=read_only)(service.search_memory)
@@ -51,6 +63,9 @@ def create_server(host: str = "127.0.0.1", port: int = 8766) -> FastMCP:
     server.tool(annotations=read_only)(service.get_session_context)
     server.tool(annotations=read_only)(service.trace_evidence)
     server.tool(annotations=read_only)(service.get_grind_outputs)
+    server.tool(annotations=read_only)(service.get_lineup)
+    server.tool(annotations=additive_write)(service.add_note)
+    server.tool(annotations=additive_write)(service.create_session)
     server.tool(name="search", annotations=read_only)(service.search)
     server.tool(name="fetch", annotations=read_only)(service.fetch)
     return server

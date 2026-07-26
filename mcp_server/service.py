@@ -135,7 +135,7 @@ def server_info() -> dict[str, Any]:
         retrieval = {"semantic": False, "backend": None, "model": None, "note": "lexical-only"}
     return {
         "name": "SKATE Workshop Memory",
-        "mode": "read-only",
+        "mode": "read-first; additive writes with agent provenance (add_note, create_session)",
         "vault_root": str(SKATE_ROOT),
         "active_session_count": len(rows),
         "active_memory_count": len(governed),
@@ -407,3 +407,189 @@ def fetch(memory_id: str) -> dict[str, Any]:
         "url": result["uri"],
         "metadata": {key: value for key, value in result.items() if key not in {"body", "excerpt"}},
     }
+
+
+# ─── The Lineup and governed write tools ─────────────────────────────────────
+#
+# Write tools are deliberately narrow: they can add new governed memory with
+# explicit agent provenance, but they can never edit or delete existing notes,
+# and MCP clients surface them for human approval before each call.
+
+import skate_lib as _lib  # noqa: E402
+import frontmatter as _frontmatter  # noqa: E402
+from datetime import date as _date  # noqa: E402
+
+_SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
+
+
+def _slug(value: str) -> str:
+    slug = _SLUG_PATTERN.sub("-", (value or "").strip().lower()).strip("-")
+    return slug[:80]
+
+
+def _lineup_row(entry: Entry) -> dict[str, Any]:
+    return {
+        "memory_id": entry.file_id,
+        "title": entry.title,
+        "session": entry.session,
+        "session_label": entry.session_display,
+        "lineup_status": entry.lineup_status or "open",
+        "lineup_kind": entry.lineup_kind or "action",
+        "owner": entry.owner,
+        "due_date": entry.due_date,
+        "cadence": entry.cadence,
+        "last_completed": entry.last_completed,
+        "captured_from": entry.captured_from,
+        "uri": f"skate://memory/{entry.file_id}",
+    }
+
+
+def get_lineup(session: str = "", include_landed: bool = True) -> dict[str, Any]:
+    """Read The Lineup: tracked Action Items and recurring Standard Work.
+
+    Returns open items first, sorted by due date. Set include_landed=False
+    to see only outstanding work. Optionally scope to one session.
+    """
+    entries = load_all_entries()
+    governed, _rows = _active_entries(entries)
+    tracked = [e for e in governed if e.entry_type == "action"]
+    if session:
+        tracked = [e for e in tracked if e.session == session.strip()]
+    if not include_landed:
+        tracked = [e for e in tracked if e.lineup_status != "landed"]
+    tracked.sort(key=lambda e: (e.lineup_status == "landed", e.due_date or "9999-12-31", e.title.lower()))
+    actions = [_lineup_row(e) for e in tracked if e.lineup_kind != "standard_work"]
+    standard_work = [_lineup_row(e) for e in tracked if e.lineup_kind == "standard_work"]
+    return {
+        "today": _date.today().isoformat(),
+        "session": session or None,
+        "open_count": sum(1 for row in actions if row["lineup_status"] != "landed"),
+        "landed_count": sum(1 for row in actions if row["lineup_status"] == "landed"),
+        "actions": actions,
+        "standard_work": standard_work,
+    }
+
+
+_WRITABLE_TYPES = {
+    "note", "observation", "pain", "quote", "insight", "question",
+    "opportunity", "risk", "recommendation", "decision", "action",
+}
+
+
+def add_note(
+    title: str,
+    body: str,
+    session: str,
+    entry_type: str = "note",
+    tags: str = "",
+    themes: str = "",
+    owner: str = "",
+    due_date: str = "",
+    agent_name: str = "MCP agent",
+) -> dict[str, Any]:
+    """Add one new governed memory object to a session.
+
+    Creates a new Markdown note with agent provenance; it cannot modify or
+    delete existing memory. entry_type may be any SKATE type, including
+    'action' (which also appears in The Lineup; use owner/due_date then).
+    Use capture signals in the body when helpful: #O observation, #P pain,
+    #Q question, #A action.
+    """
+    title = (title or "").strip()
+    body = (body or "").strip()
+    session_slug = _slug(session)
+    if not title or not body:
+        return {"error": "Both title and body are required."}
+    if not session_slug:
+        return {"error": "A session is required. Call list_active_sessions or create_session first."}
+    entry_type = (entry_type or "note").strip().lower()
+    if entry_type not in _WRITABLE_TYPES:
+        return {"error": f"Unsupported entry type: {entry_type}", "supported": sorted(_WRITABLE_TYPES)}
+
+    today = _date.today().isoformat()
+    metadata: dict[str, Any] = {
+        "title": title,
+        "date": today,
+        "type": entry_type,
+        "session": session_slug,
+        "session_label": session_slug.replace("-", " ").title(),
+        "session_status": "active",
+        "tags": [t.strip() for t in (tags or "").split(",") if t.strip()],
+        "themes": [t.strip() for t in (themes or "").split(",") if t.strip()],
+        "participants": [],
+        "status": "active",
+        "related": [],
+        "relationships": [],
+        "source": f"added by {agent_name.strip() or 'MCP agent'} via SKATE MCP",
+    }
+    if entry_type == "action":
+        metadata.update(
+            {
+                "lineup_status": "open",
+                "lineup_kind": "action",
+                "owner": (owner or "").strip(),
+                "due_date": (due_date or "").strip(),
+                "cadence": "once",
+                "last_completed": "",
+                "captured_from": "",
+            }
+        )
+
+    folder = _lib.CONVERSATIONS / session_slug
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{today}-{_slug(title) or 'note'}.md"
+    counter = 2
+    while path.exists():
+        path = folder / f"{today}-{_slug(title) or 'note'}-{counter}.md"
+        counter += 1
+
+    post = _frontmatter.Post(body + "\n", **metadata)
+    path.write_text(_frontmatter.dumps(post), encoding="utf-8")
+
+    # Make sure the session itself exists so governance and views stay coherent.
+    session_readme = _lib.SESSIONS / session_slug / "README.md"
+    if not session_readme.exists():
+        session_readme.parent.mkdir(parents=True, exist_ok=True)
+        session_meta = {
+            "title": metadata["session_label"],
+            "session": session_slug,
+            "status": "active",
+            "date": today,
+        }
+        session_body = f"# {metadata['session_label']}\n\n## Focus\n\nCreated via SKATE MCP.\n\n## Readout Notes\n\n- \n"
+        session_readme.write_text(_frontmatter.dumps(_frontmatter.Post(session_body, **session_meta)), encoding="utf-8")
+
+    memory_id = path.relative_to(_lib.CONVERSATIONS).as_posix()
+    return {
+        "created": True,
+        "memory_id": memory_id,
+        "title": title,
+        "type": entry_type,
+        "session": session_slug,
+        "uri": f"skate://memory/{memory_id}",
+    }
+
+
+def create_session(title: str, summary: str = "", agent_name: str = "MCP agent") -> dict[str, Any]:
+    """Create a new, empty workshop session for future notes.
+
+    Idempotent: if the session already exists it is returned unchanged.
+    """
+    title = (title or "").strip()
+    session_slug = _slug(title)
+    if not session_slug:
+        return {"error": "A session title is required."}
+    session_readme = _lib.SESSIONS / session_slug / "README.md"
+    if session_readme.exists():
+        return {"created": False, "existed": True, "session": session_slug, "uri": f"skate://session/{session_slug}"}
+    metadata = {
+        "title": title,
+        "session": session_slug,
+        "status": "active",
+        "date": _date.today().isoformat(),
+    }
+    focus = (summary or "").strip() or f"Created by {agent_name.strip() or 'MCP agent'} via SKATE MCP."
+    body = f"# {title}\n\n## Focus\n\n{focus}\n\n## Readout Notes\n\n- \n"
+    session_readme.parent.mkdir(parents=True, exist_ok=True)
+    session_readme.write_text(_frontmatter.dumps(_frontmatter.Post(body, **metadata)), encoding="utf-8")
+    return {"created": True, "session": session_slug, "title": title, "uri": f"skate://session/{session_slug}"}

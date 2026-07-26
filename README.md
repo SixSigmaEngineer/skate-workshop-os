@@ -87,8 +87,9 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 | Choice of AI provider: OpenAI, Anthropic, OpenRouter, local LM Studio, or no AI at all | Working |
 | The Lineup for flexible, session-linked, and recurring Standard Work actions | Working |
 | Skater levels: gamified progress from Grom to 900 Legend on the Stats page | Working |
-| Read-only MCP server for MCP-enabled agents (STDIO and Streamable HTTP) | Working |
-| One-click MCP setup for both Codex/ChatGPT desktop and Claude Desktop | Working |
+| MCP server for MCP-enabled agents: governed reads plus additive writes (STDIO and Streamable HTTP) | Working |
+| Agent access to The Lineup via MCP (`get_lineup`) | Working |
+| One-click MCP setup for both Codex/ChatGPT desktop and Claude Desktop (classic and Microsoft Store installs) | Working |
 | Windows installer with bundled MCP executable | Working |
 
 ## Six core capabilities
@@ -126,7 +127,7 @@ flowchart LR
     O --> G["LLM reasoning"]
     G --> D["The GRIND"]
     D --> X["Traceable ideas and exports"]
-    M --> P["Read-only SKATE MCP server"]
+    M --> P["Governed SKATE MCP server"]
     P --> C["MCP-enabled agents and desktop clients"]
     P -. "Authenticated HTTPS tunnel" .-> H["Hosted agent surfaces"]
 ```
@@ -183,7 +184,7 @@ The 2D and 3D views make the same memory inspectable as a network of notes, them
 
 ## MCP: the agent-memory interface
 
-SKATE's read-only MCP server lets any MCP-enabled agent ask for the smallest useful slice of workshop memory rather than receiving an entire meeting transcript. MCP is the interface; SKATE's governed Markdown, relationships, retrieval, and provenance remain the memory architecture behind it.
+SKATE's MCP server lets any MCP-enabled agent ask for the smallest useful slice of workshop memory rather than receiving an entire meeting transcript. Reads are governed and bounded; writes are deliberately narrow — an agent can add new notes and sessions with explicit agent provenance, but can never edit or delete existing memory, and MCP clients ask the human for approval before each write. MCP is the interface; SKATE's governed Markdown, relationships, retrieval, and provenance remain the memory architecture behind it.
 
 ```mermaid
 sequenceDiagram
@@ -208,6 +209,9 @@ Available tools:
 | `get_session_context` | Retrieve a bounded overview of one session |
 | `trace_evidence` | Follow provenance and typed relationships |
 | `get_grind_outputs` | Retrieve the most recent design-thinking synthesis |
+| `get_lineup` | See open and landed Action Items and recurring Standard Work |
+| `add_note` | Add one new governed memory object with agent provenance (additive only) |
+| `create_session` | Create a new empty workshop session |
 | `search` / `fetch` | Compatibility tools for knowledge and research surfaces |
 
 ### Connect SKATE memory to an agent
@@ -348,7 +352,7 @@ skate-workshop-os/
 - Team deployments: shared vaults with role-based governance for improvement programs.
 - Deeper analytics: frequency, co-occurrence, and trend views over typed signals to support prioritization.
 - macOS and Linux launchers.
-- Write-capable MCP tools with explicit human approval gates.
+- Richer MCP write tools (relationship linking, action status updates) behind the same human approval gates.
 
 ## License
 

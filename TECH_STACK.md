@@ -14,7 +14,7 @@ A plain-language tour of what SKATE is built with and *why*. The guiding princip
 | Durable storage | Local Markdown + YAML frontmatter | Keep it. This is central to trust, portability, inspectability, and an Obsidian-compatible experience. |
 | Web application | FastAPI + Jinja2 + vanilla JavaScript | Keep it for the hackathon. A React/Electron rewrite would add risk without strengthening the core story. |
 | Retrieval | Hybrid lexical + local embeddings with graceful fallback | Add a small retrieval evaluation set before adding a vector database. |
-| Agent connection | Read-only MCP over STDIO or Streamable HTTP | Keep tools bounded, governance-aware, and separate from unrestricted filesystem access. |
+| Agent connection | Governed MCP over STDIO or Streamable HTTP: bounded reads plus additive-only writes (`add_note`, `create_session`) with agent provenance | Keep tools bounded, governance-aware, and separate from unrestricted filesystem access. Writes can never edit or delete existing memory. |
 | Deployment | Local Windows app/server with a self-contained virtual environment | Provide double-click launchers, demo data, and clear judge instructions. Add hosted deployment only if it does not weaken the local-first promise. |
 
 ### Architecture guardrails
