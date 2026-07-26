@@ -765,7 +765,7 @@ def _active_model(settings: dict) -> str:
     return str(settings.get("model") or "gpt-5.6")
 
 
-def _chat_completions(base_url: str, headers: dict, model: str, prompt: str, max_out: int) -> str:
+def _chat_completions(base_url: str, headers: dict, model: str, prompt: str, max_out: int, reasoning_effort: str = "") -> str:
     """Call an OpenAI-compatible chat completions endpoint (OpenRouter, LM Studio)."""
     payload = {
         "model": model,
@@ -773,11 +773,14 @@ def _chat_completions(base_url: str, headers: dict, model: str, prompt: str, max
         "max_tokens": max_out,
         "response_format": {"type": "json_object"},
     }
+    if reasoning_effort:
+        payload["reasoning"] = {"effort": reasoning_effort}
     try:
         response = _post_json(f"{base_url}/chat/completions", headers, payload)
     except ValueError:
-        # Some models/servers reject the JSON-format hint; retry plain.
+        # Some models/servers reject the JSON-format or reasoning hints; retry plain.
         payload.pop("response_format", None)
+        payload.pop("reasoning", None)
         response = _post_json(f"{base_url}/chat/completions", headers, payload)
     choices = response.get("choices") or []
     if not choices:
@@ -811,12 +814,21 @@ def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
     # so give every provider the same output headroom GRIND needs for JSON.
     out_tokens = max(max_tokens, 6000)
 
+    effort = str(settings.get("reasoning_effort") or "medium").strip().lower()
+
     if provider == "anthropic":
+        # Map SKATE's reasoning effort onto Claude extended-thinking budgets.
+        thinking_budgets = {"low": 2048, "medium": 8192, "high": 16384, "xhigh": 24576, "max": 32000}
+        budget = thinking_budgets.get(effort, 0)
+        if budget:
+            out_tokens = max(out_tokens, budget + 4000)
         payload = {
             "model": model,
             "max_tokens": out_tokens,
             "messages": [{"role": "user", "content": prompt}],
         }
+        if budget:
+            payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
         headers = {
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
@@ -842,7 +854,9 @@ def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
             "HTTP-Referer": "https://github.com/SixSigmaEngineer/skate-workshop-os",
             "X-Title": "SKATE",
         }
-        return _chat_completions("https://openrouter.ai/api/v1", headers, model, prompt, out_tokens)
+        # OpenRouter accepts low/medium/high reasoning effort for capable models.
+        or_effort = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high", "max": "high"}.get(effort, "")
+        return _chat_completions("https://openrouter.ai/api/v1", headers, model, prompt, out_tokens, or_effort)
 
     if provider == "lmstudio":
         base_url = str(settings.get("lmstudio_base_url") or "http://127.0.0.1:1234/v1").rstrip("/")

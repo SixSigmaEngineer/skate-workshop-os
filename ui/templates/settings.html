@@ -99,7 +99,7 @@
       </label>
       <label>Max tokens<input name="max_tokens" type="number" min="128" max="16000" step="128" value="{{ current_settings.max_tokens }}"></label>
     </div>
-    <p class="muted"><strong>GRIND uses the provider and model selected above.</strong> Reasoning effort applies to OpenAI models; other providers use their own defaults.</p>
+    <p class="muted"><strong>GRIND uses the provider and model selected above.</strong> Reasoning effort maps to each provider: OpenAI reasoning levels, Claude extended-thinking budgets, and OpenRouter reasoning effort. LM Studio models use their own settings; "none" disables extended reasoning.</p>
     <script>
       (function () {
         var select = document.getElementById("llmProvider");

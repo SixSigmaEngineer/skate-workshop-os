@@ -149,6 +149,43 @@ class ProviderRoutingTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["model"], "gpt-5.6")
 
 
+class ReasoningEffortMappingTests(unittest.TestCase):
+    def _capture(self, settings):
+        captured = {}
+
+        def fake_post(url, headers, payload, timeout=120):
+            captured.update(payload)
+            return {
+                "content": [{"type": "text", "text": "ok"}],
+                "choices": [{"message": {"content": "ok"}}],
+                "output_text": "ok",
+            }
+
+        with patch.object(skate_app, "_post_json", fake_post):
+            skate_app._call_llm(settings, "hello")
+        return captured
+
+    def test_anthropic_effort_maps_to_thinking_budget(self):
+        payload = self._capture(_settings("anthropic", reasoning_effort="high"))
+        self.assertEqual(payload["thinking"], {"type": "enabled", "budget_tokens": 16384})
+        self.assertGreater(payload["max_tokens"], 16384)
+
+    def test_anthropic_effort_none_disables_thinking(self):
+        payload = self._capture(_settings("anthropic", reasoning_effort="none"))
+        self.assertNotIn("thinking", payload)
+
+    def test_openrouter_effort_maps_and_caps_at_high(self):
+        payload = self._capture(
+            _settings("openrouter", openrouter_model="some/model", reasoning_effort="max")
+        )
+        self.assertEqual(payload["reasoning"], {"effort": "high"})
+
+    def test_lmstudio_sends_no_reasoning_field(self):
+        settings = _settings("lmstudio", lmstudio_model="m", reasoning_effort="high")
+        payload = self._capture(settings)
+        self.assertNotIn("reasoning", payload)
+
+
 class SettingsValidationTests(unittest.TestCase):
     def test_defaults_include_all_providers(self):
         keys = skate_app.DEFAULT_SETTINGS["api_keys"]
