@@ -48,7 +48,10 @@ if ($config.mcpServers.PSObject.Properties["skate"]) {
 }
 $config.mcpServers | Add-Member -NotePropertyName "skate" -NotePropertyValue $server
 
-$config | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8
+# Write UTF-8 WITHOUT a byte-order mark: Windows PowerShell 5.1's
+# Set-Content -Encoding UTF8 adds a BOM, which can break JSON parsers.
+$json = $config | ConvertTo-Json -Depth 10
+[System.IO.File]::WriteAllText($configPath, $json, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host "SKATE MCP is configured for Claude Desktop."
 Write-Host "Config: $configPath"
