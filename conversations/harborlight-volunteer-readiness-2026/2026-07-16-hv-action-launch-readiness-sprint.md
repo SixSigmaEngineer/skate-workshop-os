@@ -1,24 +1,37 @@
 ---
 date: 2026-07-16
-participants: [Volunteer Coordinator, Content Owners, Coaches]
+last_completed: ''
+lineup_status: open
+participants:
+- Volunteer Coordinator
+- Content Owners
+- Coaches
 related: []
 relationships:
-- type: follows
+- note: Operationalizes the cohort decision.
   target: 2026-07-16-hv-decision-run-one-cohort.md
-  note: Operationalizes the cohort decision.
-- type: references
+  type: follows
+- note: Executes the recommended experiment.
   target: 2026-07-16-hv-recommendation-readiness-sprint.md
-  note: Executes the recommended experiment.
+  type: references
 session: harborlight-volunteer-readiness-2026
 session_label: Harborlight Volunteer Readiness Workshop 2026
 session_status: active
 source: fictional nonprofit workshop demo
 status: active
-tags: [harborlight, action-plan, volunteer-training, workshop-demo]
-themes: [Workshop Facilitation, Training, Volunteer Enablement]
+tags:
+- harborlight
+- action-plan
+- volunteer-training
+- workshop-demo
+themes:
+- Workshop Facilitation
+- Training
+- Volunteer Enablement
 title: Action plan - launch the volunteer readiness sprint
 type: action
 ---
+
 # Action plan - launch the volunteer readiness sprint
 
 ## Meeting notes

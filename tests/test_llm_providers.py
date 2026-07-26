@@ -197,5 +197,39 @@ class SettingsValidationTests(unittest.TestCase):
             self.assertIn(provider, skate_app.LLM_PROVIDER_LABELS)
 
 
+class SkaterLevelTests(unittest.TestCase):
+    class _E:
+        def __init__(self, session_key="s1", entry_type="note", lineup_status=""):
+            self.session_key = session_key
+            self.entry_type = entry_type
+            self.lineup_status = lineup_status
+
+    def test_empty_vault_is_a_grom(self):
+        progress = skate_app._skater_progress([])
+        self.assertEqual(progress["level"], 1)
+        self.assertEqual(progress["name"], "Grom")
+        self.assertEqual(progress["xp"], 0)
+
+    def test_xp_formula_counts_sessions_notes_and_landed_actions(self):
+        entries = [
+            self._E("s1"),
+            self._E("s1"),
+            self._E("s2", entry_type="action", lineup_status="landed"),
+        ]
+        progress = skate_app._skater_progress(entries)
+        # 3 notes + 2 sessions*10 + 1 landed*5 = 28 XP -> Pusher (20+)
+        self.assertEqual(progress["xp"], 28)
+        self.assertEqual(progress["name"], "Pusher")
+        self.assertEqual(progress["landed"], 1)
+        self.assertEqual(progress["xp_to_next"], 22)
+
+    def test_top_level_caps_out(self):
+        entries = [self._E(f"s{i}") for i in range(70)]  # 70 notes + 700 session XP
+        progress = skate_app._skater_progress(entries)
+        self.assertEqual(progress["name"], "900 Legend")
+        self.assertIsNone(progress["next_name"])
+        self.assertEqual(progress["percent"], 100)
+
+
 if __name__ == "__main__":
     unittest.main()

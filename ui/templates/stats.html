@@ -2,6 +2,31 @@
 {% block title %}Stats{% endblock %}
 {% block content %}
 <section class="pagehead"><h1>Stats</h1></section>
+
+<section class="skater-card">
+  <div class="skater-head">
+    <div>
+      <span class="skater-eyebrow">Skater level {{ skater.level }} of {{ skater.level_count }}</span>
+      <h2 class="skater-name">{{ skater.name }}</h2>
+      <p class="skater-desc">{{ skater.description }}</p>
+    </div>
+    <div class="skater-xp"><strong>{{ skater.xp }}</strong><span>XP</span></div>
+  </div>
+  <div class="skater-bar" role="progressbar" aria-valuenow="{{ skater.percent }}" aria-valuemin="0" aria-valuemax="100">
+    <div class="skater-bar-fill" style="width: {{ skater.percent }}%"></div>
+  </div>
+  {% if skater.next_name %}
+    <p class="skater-next">{{ skater.xp_to_next }} XP to <strong>{{ skater.next_name }}</strong></p>
+  {% else %}
+    <p class="skater-next">Top of the scale — keep shredding.</p>
+  {% endif %}
+  <div class="skater-breakdown">
+    <span><strong>{{ skater.sessions }}</strong> sessions × 10 XP</span>
+    <span><strong>{{ skater.notes }}</strong> notes × 1 XP</span>
+    <span><strong>{{ skater.landed }}</strong> landed actions × 5 XP</span>
+  </div>
+</section>
+
 <section class="grid stats">
   <div><strong>{{ total }}</strong><span>Total</span></div>
   <div><strong>{{ top_tags | length }}</strong><span>Top tags</span></div>

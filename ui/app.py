@@ -3258,6 +3258,55 @@ def search(
     )
 
 
+SKATER_LEVELS = [
+    (0, "Grom", "Everyone starts somewhere. Push around and capture your first notes."),
+    (20, "Pusher", "You're rolling — notes are landing and a session is taking shape."),
+    (50, "Ollie", "First real air: consistent capture across sessions."),
+    (100, "Kickflip", "Style points — typed signals, themes, and landed actions."),
+    (175, "Boardslide", "Committed. Workshop memory is becoming a habit."),
+    (275, "50-50 Grind", "Locked in. The GRIND is your home turf."),
+    (400, "Vert Ripper", "Big lines across many workshops and follow-through to match."),
+    (600, "900 Legend", "Rarefied air. Your vault is true organizational memory."),
+]
+
+
+def _skater_progress(entries) -> dict:
+    """Gamified progress: XP from sessions, notes, and landed actions."""
+    session_keys = {e.session_key for e in entries if e.session_key}
+    note_count = len(entries)
+    landed_count = sum(
+        1 for e in entries if e.entry_type == "action" and e.lineup_status == "landed"
+    )
+    xp = note_count + len(session_keys) * 10 + landed_count * 5
+
+    level_index = 0
+    for i, (threshold, _name, _desc) in enumerate(SKATER_LEVELS):
+        if xp >= threshold:
+            level_index = i
+    threshold, name, desc = SKATER_LEVELS[level_index]
+    at_top = level_index == len(SKATER_LEVELS) - 1
+    next_threshold, next_name = (None, None) if at_top else SKATER_LEVELS[level_index + 1][:2]
+    if at_top:
+        percent = 100
+    else:
+        span = max(next_threshold - threshold, 1)
+        percent = min(99, int((xp - threshold) * 100 / span))
+    return {
+        "xp": xp,
+        "level": level_index + 1,
+        "level_count": len(SKATER_LEVELS),
+        "name": name,
+        "description": desc,
+        "next_name": next_name,
+        "next_threshold": next_threshold,
+        "xp_to_next": None if at_top else next_threshold - xp,
+        "percent": percent,
+        "sessions": len(session_keys),
+        "notes": note_count,
+        "landed": landed_count,
+    }
+
+
 @app.get("/stats", response_class=HTMLResponse)
 def stats_page(request: Request):
     entries = load_all_entries()
@@ -3284,6 +3333,7 @@ def stats_page(request: Request):
             "total": len(entries),
             "timeline": timeline,
             "top_tags": top_tags,
+            "skater": _skater_progress(entries),
             **sidebar,
         },
     )

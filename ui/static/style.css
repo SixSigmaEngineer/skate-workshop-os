@@ -1450,3 +1450,20 @@ body { background: #fff; color: var(--ink); }
   .lineup-filter { justify-content: stretch; }
   .lineup-filter label { width: 100%; }
 }
+
+/* ─── Skater levels (Stats gamification) ─────────────────────── */
+.skater-card { background: linear-gradient(135deg, #eef6f4, #eef2f9); border: 1px solid #d6e4e0; border-radius: 14px; padding: 20px 22px; margin-bottom: 22px; }
+.skater-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.skater-eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; font-size: 12px; }
+.skater-name { margin: 2px 0 4px; font-size: 30px; }
+.skater-desc { margin: 0; color: #4a5a56; }
+.skater-xp { text-align: center; background: white; border: 1px solid #d6e4e0; border-radius: 12px; padding: 10px 18px; min-width: 84px; }
+.skater-xp strong { display: block; font-size: 26px; color: var(--accent); }
+.skater-xp span { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #6b7c78; }
+.skater-bar { height: 12px; background: #ffffff; border: 1px solid #d6e4e0; border-radius: 999px; overflow: hidden; margin-top: 14px; }
+.skater-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 999px; transition: width .4s ease; }
+.skater-next { margin: 8px 0 12px; color: #4a5a56; font-size: 14px; }
+.skater-breakdown { display: flex; flex-wrap: wrap; gap: 10px; }
+.skater-breakdown span { background: white; border: 1px solid #d6e4e0; border-radius: 999px; padding: 5px 12px; font-size: 13px; color: #4a5a56; }
+.skater-breakdown strong { color: var(--accent); }
+@media (max-width: 640px) { .skater-head { flex-direction: column; } }
