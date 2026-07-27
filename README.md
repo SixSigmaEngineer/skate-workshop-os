@@ -297,7 +297,7 @@ The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `
 | Capability | Requirement |
 |---|---|
 | GRIND and Spotter reasoning | OpenAI, Anthropic, or OpenRouter API key — or LM Studio locally, or none |
-| Local audio/video transcription | Local Whisper installation |
+| Local audio/video transcription | Local Whisper installation (source checkout; the installed app uses OpenAI or ElevenLabs transcription) |
 | Live transcript and spoken Spotter responses | OpenAI API key (realtime voice models) |
 | Optional realtime speaker diarization | ElevenLabs API key and Scribe Realtime |
 | Local semantic retrieval | FastEmbed or Ollama with `nomic-embed-text` |

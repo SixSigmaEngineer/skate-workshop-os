@@ -523,7 +523,10 @@ fetch("/api/transcription-health")
   .then((response) => response.json())
   .then((health) => {
     const indicator = document.getElementById("transcriptionStatus");
-    if (!health.whisper) {
+    if (!health.whisper && health.frozen) {
+      indicator.textContent = "Local Whisper is available when running SKATE from source. In the installed app, set Speech to text to OpenAI or ElevenLabs in Settings to transcribe recordings.";
+      indicator.dataset.state = "error";
+    } else if (!health.whisper) {
       indicator.textContent = "Local Whisper is not installed. Run Install Local Whisper.bat once, then restart SKATE.";
       indicator.dataset.state = "error";
     } else if (!health.decoder) {

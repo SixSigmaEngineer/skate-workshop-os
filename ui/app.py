@@ -2721,6 +2721,9 @@ async def transcription_health():
         "model_root": str(model_root),
         "models": model_files,
         "base_model": "base.pt" in model_files,
+        # Frozen (installed) builds have no pip environment, so local Whisper
+        # cannot be added there; cloud transcription is the supported path.
+        "frozen": bool(getattr(sys, "frozen", False)),
     }
 
 
