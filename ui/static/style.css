@@ -1467,3 +1467,12 @@ body { background: #fff; color: var(--ink); }
 .skater-breakdown span { background: white; border: 1px solid #d6e4e0; border-radius: 999px; padding: 5px 12px; font-size: 13px; color: #4a5a56; }
 .skater-breakdown strong { color: var(--accent); }
 @media (max-width: 640px) { .skater-head { flex-direction: column; } }
+
+/* ─── Sidebar: keep it in view and scrollable on long vaults ──── */
+.sidebar {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}

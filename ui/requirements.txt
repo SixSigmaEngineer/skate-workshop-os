@@ -10,6 +10,11 @@ pywebview>=5.0
 imageio-ffmpeg>=0.4.9
 mcp>=1.23,<2
 
+# Local/offline transcription engine. CTranslate2-based: no PyTorch, decodes
+# audio via bundled PyAV (no external ffmpeg), models download on first use
+# into models/whisper. Ships inside the packaged Windows app.
+faster-whisper>=1.0
+
 # Optional: semantic retrieval (ui/embeddings.py). Preferred: install Ollama
 # (https://ollama.com, MIT) and run `ollama pull nomic-embed-text` — zero pip
 # deps, GPU-accelerated. Alternative, CPU-only, no server:
@@ -23,8 +28,8 @@ mcp>=1.23,<2
 #   pip install pypdf
 # pypdf>=4.0
 
-# Optional: local/offline Whisper transcription. NOT needed when using ElevenLabs
-# Scribe for Speech-to-Text. It pulls in numba/torch, which do not support
-# Python 3.15+ (only 3.10-3.13). To enable offline Whisper, use Python 3.13 and run:
+# Optional legacy engine: classic openai-whisper (torch-based). faster-whisper
+# above is the default local engine; install this only if you specifically
+# want the original implementation (Python 3.10-3.13 only):
 #   pip install openai-whisper
 # openai-whisper>=20250625

@@ -52,6 +52,11 @@ Write-Host "`n[1/3] Building standalone app (PyInstaller onedir)..." -Foreground
     --collect-submodules webview `
     --collect-submodules pystray `
     --collect-all imageio_ffmpeg `
+    --collect-all faster_whisper `
+    --collect-all ctranslate2 `
+    --collect-all av `
+    --collect-all tokenizers `
+    --collect-all huggingface_hub `
     --hidden-import PIL.Image `
     --hidden-import frontmatter `
     --hidden-import markdown.extensions.extra `

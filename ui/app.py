@@ -1675,10 +1675,82 @@ def _whisper_model_root() -> Path:
     return model_root
 
 
+def _faster_whisper_transcribe(audio_bytes: bytes, filename: str, content_type: str, model_name: str, progress_callback=None) -> str:
+    """Local transcription via faster-whisper (CTranslate2).
+
+    This engine ships inside the packaged app: no PyTorch, no external
+    ffmpeg (PyAV decodes), and models download on first use into
+    models/whisper.
+    """
+    from faster_whisper import WhisperModel
+
+    def report(percent: int, phase: str) -> None:
+        if progress_callback:
+            progress_callback(max(0, min(99, int(percent))), phase)
+
+    suffix = (Path(filename).suffix or mimetypes.guess_extension(content_type) or ".webm").lower()
+    report(4, "Loading Whisper model")
+    cache_key = f"faster-whisper:{model_name}"
+    with WHISPER_MODEL_LOCK:
+        if WHISPER_MODEL_CACHE.get("name") == cache_key and WHISPER_MODEL_CACHE.get("model") is not None:
+            model = WHISPER_MODEL_CACHE["model"]
+            report(6, "Whisper model ready")
+        else:
+            try:
+                model = WhisperModel(
+                    model_name,
+                    device="cpu",
+                    compute_type="int8",
+                    download_root=str(_whisper_model_root()),
+                )
+            except Exception as exc:
+                message = str(exc)
+                if any(marker in message.lower() for marker in ("connection", "download", "resolve", "offline", "urlopen")):
+                    raise RuntimeError(
+                        f"The local Whisper '{model_name}' model is not downloaded yet. Connect to the internet once; SKATE stores it in models\\whisper for offline use after that."
+                    ) from exc
+                raise
+            WHISPER_MODEL_CACHE["name"] = cache_key
+            WHISPER_MODEL_CACHE["model"] = model
+
+    import tempfile
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as fh:
+            fh.write(audio_bytes)
+            temp_path = Path(fh.name)
+        report(8, "Decoding recording")
+        segments, info = model.transcribe(str(temp_path), beam_size=5)
+        duration = float(getattr(info, "duration", 0.0) or 0.0)
+        parts: list[str] = []
+        for segment in segments:
+            parts.append(segment.text)
+            if duration > 0:
+                report(12 + round(83 * min(1.0, float(segment.end) / duration)), "Transcribing recording")
+        report(98, "Finalizing transcript")
+        return " ".join(part.strip() for part in parts if part.strip()).strip()
+    finally:
+        if temp_path:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def _local_whisper_transcribe(audio_bytes: bytes, filename: str, content_type: str, model_name: str, progress_callback=None) -> str:
     def report(percent: int, phase: str) -> None:
         if progress_callback:
             progress_callback(max(0, min(99, int(percent))), phase)
+
+    # Prefer the bundled faster-whisper engine (present in packaged builds
+    # and fresh source setups); fall back to classic openai-whisper for
+    # environments that installed it via Install Local Whisper.bat.
+    try:
+        import faster_whisper  # noqa: F401
+        return _faster_whisper_transcribe(audio_bytes, filename, content_type, model_name, progress_callback)
+    except ImportError:
+        pass
 
     try:
         import whisper
@@ -2712,17 +2784,26 @@ async def transcription_health():
 
     model_root = _whisper_model_root()
     model_files = sorted(path.name for path in model_root.glob("*.pt"))
+    # faster-whisper stores models as HuggingFace snapshot folders.
+    fw_models = sorted(
+        path.name.rsplit("faster-whisper-", 1)[-1]
+        for path in model_root.glob("models--*faster-whisper-*")
+        if path.is_dir()
+    )
+    has_faster_whisper = bool(importlib.util.find_spec("faster_whisper"))
+    has_classic_whisper = bool(importlib.util.find_spec("whisper"))
     ffmpeg_path = _find_local_ffmpeg()
     return {
         "ok": True,
-        "whisper": bool(importlib.util.find_spec("whisper")),
-        "decoder": bool(ffmpeg_path),
+        "whisper": has_faster_whisper or has_classic_whisper,
+        # faster-whisper decodes through bundled PyAV; classic whisper
+        # needs the external ffmpeg helper.
+        "decoder": has_faster_whisper or bool(ffmpeg_path),
         "decoder_path": str(ffmpeg_path) if ffmpeg_path else "",
         "model_root": str(model_root),
-        "models": model_files,
-        "base_model": "base.pt" in model_files,
-        # Frozen (installed) builds have no pip environment, so local Whisper
-        # cannot be added there; cloud transcription is the supported path.
+        "models": model_files + [name for name in fw_models if name not in model_files],
+        "base_model": "base.pt" in model_files or "base" in fw_models,
+        "engine": "faster-whisper" if has_faster_whisper else ("openai-whisper" if has_classic_whisper else ""),
         "frozen": bool(getattr(sys, "frozen", False)),
     }
 

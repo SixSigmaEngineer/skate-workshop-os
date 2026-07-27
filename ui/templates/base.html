@@ -53,8 +53,10 @@
       </div>
       <div class="sidebar-heading"><h3>Sessions</h3><a href="/sessions/new">+</a></div>
       <div class="stack">
-        {% for session in sessions[:10] %}
+        {% for session in sessions if session.status != 'inactive' %}
           <a class="rowlink" href="/session/{{ session.key }}">{{ session.label }} <span>{{ session.count }}</span></a>
+        {% else %}
+          <span class="muted">No active sessions.</span>
         {% endfor %}
       </div>
       <div class="memory-tree">
