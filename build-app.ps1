@@ -143,6 +143,19 @@ Copy-Item -LiteralPath (Join-Path $Root "demo-vault\sessions")      -Destination
 Copy-Item -LiteralPath (Join-Path $Root "demo-vault\INDEX.md")      -Destination (Join-Path $Seed "INDEX.md") -Force
 Copy-Item -LiteralPath (Join-Path $Root "templates")                -Destination (Join-Path $Seed "templates") -Recurse -Force
 
+# Bundle the local Whisper models so transcription works fully offline out
+# of the box: no first-use download, no network touch, audio never leaves
+# the machine. Never send HuggingFace credentials for these public models.
+Write-Host "`nPre-downloading local Whisper models (tiny, base) into the vault seed..." -ForegroundColor Cyan
+$env:HF_HUB_DISABLE_IMPLICIT_TOKEN = "1"
+Remove-Item Env:HF_TOKEN, Env:HUGGING_FACE_HUB_TOKEN, Env:HUGGINGFACE_HUB_TOKEN -ErrorAction SilentlyContinue
+$SeedModels = Join-Path $Seed "models\whisper"
+New-Item -ItemType Directory -Force -Path $SeedModels | Out-Null
+& $Python -c "from faster_whisper import WhisperModel; [WhisperModel(m, device='cpu', compute_type='int8', download_root=r'$SeedModels') for m in ('tiny', 'base')]; print('Whisper models bundled.')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Whisper model pre-download failed. Check the network and rerun."
+}
+
 # Optional skills ship with the app when present.
 foreach ($name in @("skills")) {
     $SourceDir = Join-Path $Root $name

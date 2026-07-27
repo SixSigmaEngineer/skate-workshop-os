@@ -78,6 +78,14 @@ TRANSCRIPTION_JOBS_LOCK = threading.Lock()
 WHISPER_PROGRESS_LOCK = threading.Lock()
 WHISPER_MODEL_LOCK = threading.Lock()
 WHISPER_MODEL_CACHE: dict[str, object] = {"name": None, "model": None}
+
+# Local transcription only ever fetches PUBLIC Whisper models (a one-time
+# model-weights download; audio never leaves this computer). Never send a
+# HuggingFace credential: a stale local login otherwise causes 401
+# "Repository Not Found" errors on public models.
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+for _hf_var in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
+    os.environ.pop(_hf_var, None)
 APP_SHOW_REQUESTED = threading.Event()
 _SINGLE_INSTANCE_MUTEX = None
 

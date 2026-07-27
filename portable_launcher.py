@@ -52,7 +52,7 @@ def _seed_vault(root: Path) -> None:
     or replacing any user-created sessions, notes, settings, or files."""
     root.mkdir(parents=True, exist_ok=True)
     seed = EXE_DIR / "vault-seed"
-    for sub in ("conversations", "sessions", "templates", "workshop-knowledge-documents"):
+    for sub in ("conversations", "sessions", "templates", "workshop-knowledge-documents", "models"):
         target = root / sub
         source = seed / sub
         if source.exists():
