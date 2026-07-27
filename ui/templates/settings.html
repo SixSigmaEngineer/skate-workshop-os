@@ -150,12 +150,13 @@
       <span class="muted" id="micStatus">Click Detect to grant microphone access and list your input devices, then pick one and Save.</span>
     </div>
     <div class="two">
-      <label>Speech-to-Text engine
+      <label>Spotter Live captions engine
         <select name="speech_to_text_provider" id="sttProvider">
           <option value="openai" {% if current_settings.speech_to_text_provider == 'openai' %}selected{% endif %}>OpenAI Realtime Whisper — live</option>
           <option value="local" {% if current_settings.speech_to_text_provider == 'local' %}selected{% endif %}>Local Whisper — private and near-live</option>
           <option value="elevenlabs" {% if current_settings.speech_to_text_provider == 'elevenlabs' %}selected{% endif %}>ElevenLabs Scribe — cloud</option>
         </select>
+        <span class="muted">Applies to Spotter Live only. Uploaded recordings are always transcribed locally and never leave this computer.</span>
       </label>
       <label>Text-to-Speech
         <select name="text_to_speech_provider" id="ttsProvider">

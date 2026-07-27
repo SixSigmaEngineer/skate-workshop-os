@@ -1,9 +1,10 @@
 ---
-title: Harborlight Service Access Workshop 2026
+date: 2026-07-15
 session: harborlight-service-access-2026
 status: active
-date: 2026-07-15
+title: Harborlight Service Access Workshop 2026
 ---
+
 # Harborlight Service Access Workshop 2026
 
 ## Focus

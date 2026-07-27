@@ -598,38 +598,6 @@ def _post_multipart(url: str, headers: dict, fields: dict[str, str], files: dict
         return json.loads(response.read().decode("utf-8"))
 
 
-def _elevenlabs_transcribe(audio_bytes: bytes, filename: str, content_type: str, api_key: str, model_id: str = "scribe_v1") -> str:
-    """Transcribe audio with the ElevenLabs Scribe speech-to-text API."""
-    response = _post_multipart(
-        "https://api.elevenlabs.io/v1/speech-to-text",
-        {"xi-api-key": api_key},
-        {"model_id": model_id or "scribe_v1"},
-        {"file": {
-            "filename": filename or "recording.webm",
-            "content_type": content_type or "audio/webm",
-            "content": audio_bytes,
-        }},
-        timeout=120,
-    )
-    return str(response.get("text", "")).strip()
-
-
-def _openai_transcribe(audio_bytes: bytes, filename: str, content_type: str, api_key: str, model_id: str) -> str:
-    """Transcribe a bounded recording with OpenAI's Audio API."""
-    response = _post_multipart(
-        "https://api.openai.com/v1/audio/transcriptions",
-        {"Authorization": f"Bearer {api_key}"},
-        {"model": model_id or "gpt-4o-mini-transcribe"},
-        {"file": {
-            "filename": filename or "recording.webm",
-            "content_type": content_type or "audio/webm",
-            "content": audio_bytes,
-        }},
-        timeout=120,
-    )
-    return str(response.get("text", "")).strip()
-
-
 def _pcm16_to_wav(pcm: bytes, sample_rate: int = 24000) -> bytes:
     """Wrap mono 16-bit PCM returned by Realtime in a browser-playable WAV."""
     buffer = BytesIO()
@@ -2625,38 +2593,10 @@ def _perform_transcription(audio_bytes: bytes, filename: str, content_type: str,
     settings = _load_settings()
     valid_whisper_models = {m["id"] for m in WHISPER_MODELS}
     model_name = requested_model if requested_model in valid_whisper_models else settings.get("transcription_model", "base")
-    stt_provider = str(settings.get("speech_to_text_provider", "local") or "local").strip().lower()
-    el_key = settings.get("api_keys", {}).get("elevenlabs", "")
-    openai_key = settings.get("api_keys", {}).get("openai", "")
 
-    if stt_provider == "elevenlabs":
-        if not el_key:
-            return {"ok": False, "error": "ElevenLabs Speech-to-Text is selected, but no ElevenLabs API key is saved. Choose Local in Settings or add a key."}
-        stt_model = settings.get("elevenlabs_stt_model", "scribe_v2")
-        try:
-            report(15, "Sending recording to ElevenLabs")
-            transcript = _elevenlabs_transcribe(audio_bytes, filename, content_type, el_key, stt_model)
-            report(98, "Finalizing transcript")
-            if transcript:
-                return {"ok": True, "transcript": transcript, "model": stt_model, "mode": "elevenlabs-scribe"}
-            return {"ok": False, "error": "ElevenLabs returned an empty transcript. Confirm your ElevenLabs key has Speech-to-Text (Scribe) access."}
-        except (HTTPError, URLError, TimeoutError, OSError, ValueError, KeyError) as e:
-            return {"ok": False, "error": f"ElevenLabs transcription failed: {e}"}
-
-    if stt_provider == "openai":
-        if not openai_key:
-            return {"ok": False, "error": "OpenAI Speech-to-Text is selected, but no OpenAI API key is saved."}
-        stt_model = settings.get("openai_batch_transcription_model", "gpt-4o-mini-transcribe")
-        try:
-            report(15, "Sending recording to OpenAI")
-            transcript = _openai_transcribe(audio_bytes, filename, content_type, openai_key, stt_model)
-            report(98, "Finalizing transcript")
-            if transcript:
-                return {"ok": True, "transcript": transcript, "model": stt_model, "mode": "openai-transcribe"}
-            return {"ok": False, "error": "OpenAI returned an empty transcript."}
-        except (HTTPError, URLError, TimeoutError, OSError, ValueError, KeyError) as e:
-            return {"ok": False, "error": f"OpenAI transcription failed: {e}"}
-
+    # Privacy guarantee: uploaded recordings are ALWAYS transcribed locally.
+    # The speech_to_text_provider setting governs only Spotter Live's
+    # realtime captions; recording audio never leaves this computer.
     try:
         transcript = _local_whisper_transcribe(audio_bytes, filename, content_type, model_name, progress_callback=progress_callback)
         if not transcript:

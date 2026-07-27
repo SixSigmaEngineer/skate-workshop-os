@@ -307,7 +307,7 @@ The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `
 
 - Notes, sessions, and transcripts are stored as local files under the SKATE project or vault.
 - Markdown and YAML are readable without SKATE and can be versioned, backed up, moved, or inspected with ordinary tools.
-- Local Whisper can transcribe recordings without uploading the media to a cloud speech provider.
+- Uploaded recordings are always transcribed locally — recording audio never leaves this computer. Cloud speech services apply only to Spotter Live's optional realtime captions.
 - Optional semantic embeddings can run locally and are cached by content hash.
 - The server binds to `127.0.0.1`, not a public network interface by default.
 - `settings.json`, private conversations, transcripts, logs, and local model artifacts are excluded through `.gitignore`.
