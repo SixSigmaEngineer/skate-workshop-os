@@ -60,11 +60,11 @@
   <div class="two">
     <label>Themes / topics
       <input name="themes" id="themes" value="{{ note_themes }}" placeholder="Advisor Productivity, Process Waste">
-      <span class="field-help">Big reusable topics for filtering and agent memory.</span>
+      <span class="field-help">Shared vocabulary reused across sessions — powers the sidebar, filters, and graph clustering. Pick from the chips below.</span>
     </label>
     <label>Tags / keywords
       <input name="tags" id="tags" value="{{ tags }}" placeholder="underwriting, rekeying, client-trust">
-      <span class="field-help">Specific keywords. SKATE will store them as plain markdown tags.</span>
+      <span class="field-help">Freeform specifics for this note only (names, systems, jargon) — anything too narrow to be a theme.</span>
     </label>
   </div>
   <div class="theme-picks" aria-label="Common themes">
@@ -74,8 +74,10 @@
   </div>
   <details>
     <summary>Relationships</summary>
-    <label>Relationships
-      <textarea name="relationships" id="relationships" rows="4" placeholder="supports | H-social-sciences/example.md | evidence note">{{ relationships }}</textarea>
+    <label>Typed links to other notes — one per line: <code>type | note-id | optional comment</code>
+      <textarea name="relationships" id="relationships" rows="4" placeholder="supports | harborlight-service-access-2026/2026-07-15-hl-intake-across-four-forms.md | duplicate intake is the evidence behind this
+contradicts | harborlight-service-access-2026/2026-07-15-hl-shadow-resource-lists.md">{{ relationships }}</textarea>
+      <span class="muted">Types: supports, contradicts, causes, leads_to, references. These become the typed edges in the knowledge graph and power evidence tracing.</span>
     </label>
   </details>
   <div class="two">
