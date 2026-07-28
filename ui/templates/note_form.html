@@ -57,27 +57,24 @@
     <input type="hidden" name="session_label" id="sessionLabel" value="{{ session_label }}">
     <input type="hidden" name="session_status" value="{{ session_status }}">
   </div>
-  <div class="two">
-    <label>Themes / topics
-      <input name="themes" id="themes" value="{{ note_themes }}" placeholder="Advisor Productivity, Process Waste">
-      <span class="field-help">Shared vocabulary reused across sessions — powers the sidebar, filters, and graph clustering. Pick from the chips below.</span>
-    </label>
-    <label>Tags / keywords
-      <input name="tags" id="tags" value="{{ tags }}" placeholder="underwriting, rekeying, client-trust">
-      <span class="field-help">Freeform specifics for this note only (names, systems, jargon) — anything too narrow to be a theme.</span>
-    </label>
-  </div>
+  <label>Themes / topics
+    <input name="themes" id="themes" value="{{ note_themes }}" placeholder="Advisor Productivity, Process Waste">
+    <span class="field-help">Reusable topics for filtering, the sidebar, and graph clustering. Pick from the chips below or type your own. Suggest Metadata fills this for you.</span>
+  </label>
+  {# Tags remain in the data model (search weighting, MCP payloads, imports)
+     but are no longer hand-entered: Suggest Metadata proposes them. #}
+  <input type="hidden" name="tags" id="tags" value="{{ tags }}">
   <div class="theme-picks" aria-label="Common themes">
     {% for theme in consulting_themes %}
       <button class="theme-pick" type="button" data-theme="{{ theme }}">{{ theme }}</button>
     {% endfor %}
   </div>
-  <details>
-    <summary>Relationships</summary>
+  <details {% if relationships %}open{% endif %}>
+    <summary>Evidence links <span class="muted">(optional — Suggest Metadata proposes these)</span></summary>
     <label>Typed links to other notes — one per line: <code>type | note-id | optional comment</code>
       <textarea name="relationships" id="relationships" rows="4" placeholder="supports | harborlight-service-access-2026/2026-07-15-hl-intake-across-four-forms.md | duplicate intake is the evidence behind this
 contradicts | harborlight-service-access-2026/2026-07-15-hl-shadow-resource-lists.md">{{ relationships }}</textarea>
-      <span class="muted">Types: supports, contradicts, causes, leads_to, references. These become the typed edges in the knowledge graph and power evidence tracing.</span>
+      <span class="muted">Types: supports, contradicts, causes, leads_to, references. These become the typed edges in the knowledge graph and power evidence tracing. You rarely need to write them by hand — click Suggest Metadata and review.</span>
     </label>
   </details>
   <div class="two">
