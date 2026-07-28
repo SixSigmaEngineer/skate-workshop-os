@@ -88,10 +88,10 @@
 {% endif %}
 
 <section class="grid stats grind-stats">
-  <div><strong>{{ stats.node_count }}</strong><span>Entries</span></div>
-  <div><strong>{{ stats.edge_count }}</strong><span>Graph links</span></div>
-  <div><strong>{{ stats.relationship_edges | default(0) }}</strong><span>Evidence links</span></div>
-  <div><strong>{{ stats.theme_edges | default(0) }}</strong><span>Theme links</span></div>
+  <div class="stat-tip" title="Memory objects on this map: every active note in the selected scope. Inactive notes and inactive sessions are excluded."><strong>{{ stats.node_count }}</strong><span>Entries</span></div>
+  <div class="stat-tip" title="All connections drawn on the map — evidence links plus theme links."><strong>{{ stats.edge_count }}</strong><span>Graph links</span></div>
+  <div class="stat-tip" title="Explicit typed relationships between two notes: supports, contradicts, causes, leads_to, or references. Created when you (or Suggest Metadata) link one note to another — this is the trail evidence tracing follows."><strong>{{ stats.relationship_edges | default(0) }}</strong><span>Evidence links</span></div>
+  <div class="stat-tip" title="Automatic connections between notes that share a theme (e.g. two notes both tagged 'Client Experience'). Nobody links these by hand — shared vocabulary clusters related notes on its own."><strong>{{ stats.theme_edges | default(0) }}</strong><span>Theme links</span></div>
 </section>
 
 <section class="grind-workspace">

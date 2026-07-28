@@ -1476,3 +1476,7 @@ body { background: #fff; color: var(--ink); }
   overflow-y: auto;
   scrollbar-width: thin;
 }
+
+/* ─── GRIND stat tiles: hover explanations ─────────────────────── */
+.grind-stats .stat-tip { cursor: help; position: relative; }
+.grind-stats .stat-tip span { border-bottom: 1px dotted #9db2c9; padding-bottom: 1px; }
