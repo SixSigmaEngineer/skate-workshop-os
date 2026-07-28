@@ -2211,7 +2211,11 @@ def new_note(
             "status_options": _options_with_current(STATUS_OPTIONS, current_status),
             "source_options": _options_with_current(SOURCE_OPTIONS, current_source),
             "summary": note_summary,
-            "body": body or _default_note_body(note_title or "Untitled", note_summary),
+            # New notes start empty; the markdown scaffold is shown as a
+            # placeholder and applied server-side only if the note is saved
+            # with no content. Prefilled bodies (e.g. Spotter handoffs) pass
+            # through unchanged.
+            "body": body or "",
             "lineup_status": "open",
             "lineup_kind": "action",
             "owner": "",
