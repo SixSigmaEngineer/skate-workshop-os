@@ -579,8 +579,21 @@ def _note_blocks(entry: Entry, block_type: str) -> list[dict]:
     if shortcut:
         # Accept live-capture bullets (``- #P:``), legacy bare markers
         # (``#P:``), and escaped markers used by some markdown editors.
+        # Two equivalent signal syntaxes: the compact marker (``- #P: ...``,
+        # including legacy bare/escaped forms) and the readable label the
+        # quick-capture buttons insert (``- Pain: ...``). "Action Item:" is
+        # accepted alongside "Action:".
+        label_words = {
+            "pain": r"Pain",
+            "observation": r"Observation",
+            "action": r"Action(?:\s+Item)?",
+            "question": r"(?:Open\s+)?Question",
+            "solution": r"Solution",
+            "recommendation": r"Recommendation",
+            "insight": r"Insight",
+        }
         shortcut_pattern = re.compile(
-            rf"(?im)^\s*(?:[-*]\s+)?\\?#{shortcut}:\s*(.+)$"
+            rf"(?im)^\s*(?:[-*]\s+)?(?:\\?#{shortcut}|{label_words[block_type]}):\s*(.+)$"
         )
         for match in shortcut_pattern.finditer(entry.body or ""):
             title = match.group(1).strip()

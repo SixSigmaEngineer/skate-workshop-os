@@ -289,17 +289,46 @@ CAPTURE_MARKER_LABELS = {
 }
 
 
+_MARKER_WORD_CODES = {
+    "pain": "P",
+    "observation": "O",
+    "action": "A",
+    "action item": "A",
+    "question": "Q",
+    "open question": "Q",
+    "solution": "S",
+    "recommendation": "R",
+    "insight": "I",
+}
+
+
 def _decorate_capture_markers(body_html: str) -> str:
-    """Apply the capture-button color language to rendered note bullets."""
+    """Apply the capture-button color language to rendered note bullets.
+
+    Both signal syntaxes are decorated: compact markers (``#P:``) and the
+    readable labels the quick-capture buttons insert (``Pain:``).
+    """
     def replace_marker(match: re.Match) -> str:
-        code = match.group(1).upper()
+        hash_code, word = match.group(1), match.group(2)
+        if hash_code:
+            code = hash_code.upper()
+            shown = f"#{code}:"
+        else:
+            code = _MARKER_WORD_CODES[word.lower()]
+            shown = f"{word}:"
         label = CAPTURE_MARKER_LABELS[code]
         return (
             f'<li class="capture-line capture-line-{code.lower()}">'
-            f'<span class="capture-marker capture-marker-{code.lower()}" title="{label}">#{code}:</span> '
+            f'<span class="capture-marker capture-marker-{code.lower()}" title="{label}">{shown}</span> '
         )
 
-    return re.sub(r"<li>\s*#([POAQRSI]):\s*", replace_marker, body_html, flags=re.I)
+    words = "|".join(sorted(_MARKER_WORD_CODES, key=len, reverse=True))
+    return re.sub(
+        rf"<li>\s*(?:#([POAQRSI]):|({words}):)\s*",
+        replace_marker,
+        body_html,
+        flags=re.I,
+    )
 
 app = FastAPI(title="SKATE")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -1959,15 +1988,15 @@ def _write_entry(
 
 def _default_note_body(title: str, summary: str = "") -> str:
     first_observation = summary.strip()
-    observation_line = f"- #O: {first_observation}" if first_observation else "- #O: "
+    observation_line = f"- Observation: {first_observation}" if first_observation else "- Observation: "
     return f"""# {title}
 
 ## Meeting notes
 
 {observation_line}
-- #P:
-- #Q:
-- #A:
+- Pain:
+- Question:
+- Action:
 
 """
 
