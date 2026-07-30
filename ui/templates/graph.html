@@ -276,6 +276,17 @@ const nodeMap = new Map(graphData.nodes.map((node, index) => {
   }];
 }));
 const nodes = [...nodeMap.values()];
+// Signal satellites start beside their parent note instead of on the outer
+// ring, so they settle into orbit instead of slingshotting across the map.
+nodes.forEach((node) => {
+  if (!node.is_signal) return;
+  const parent = nodeMap.get(node.parent);
+  if (!parent) return;
+  const jitter = () => (Math.random() - 0.5) * 80;
+  node.x = parent.x + jitter();
+  node.y = parent.y + jitter();
+  node.z = (parent.z || 0) + jitter() * 0.6;
+});
 const edges = graphData.edges.filter((edge) => nodeMap.has(edge.from) && nodeMap.has(edge.to));
 const skatePath = edges.length
   ? edges.map((edge) => [edge.from, edge.to]).flat()
@@ -353,7 +364,9 @@ function tick() {
         const a = nodes[i], b = nodes[j];
         let dx = a.x - b.x, dy = a.y - b.y;
         let dist2 = dx * dx + dy * dy || 1;
-        const force = 1700 / dist2;
+        // Satellites carry a fraction of a note's charge: they gently
+        // spread around their parent without shoving the whole map.
+        const force = (1700 * (a.is_signal ? 0.25 : 1) * (b.is_signal ? 0.25 : 1)) / dist2;
         a.vx += dx * force;
         a.vy += dy * force;
         a.vz += ((a.z - b.z) || 1) * force * 0.18;
@@ -368,8 +381,9 @@ function tick() {
       const dx = b.x - a.x, dy = b.y - a.y;
       const dz = b.z - a.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-      const target = edge.type === "contains" ? 55 : (edge.type === "similar_to" ? 150 : 115);
-      const force = (dist - target) * 0.008;
+      const target = edge.type === "contains" ? 52 : (edge.type === "similar_to" ? 150 : 115);
+      // Parent-satellite springs are stiff so signals stay in tight orbit.
+      const force = (dist - target) * (edge.type === "contains" ? 0.05 : 0.008);
       a.vx += (dx / dist) * force;
       a.vy += (dy / dist) * force;
       a.vz += (dz / dist) * force;

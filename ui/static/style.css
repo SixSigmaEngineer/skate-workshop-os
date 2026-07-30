@@ -1480,3 +1480,9 @@ body { background: #fff; color: var(--ink); }
 /* ─── GRIND stat tiles: hover explanations ─────────────────────── */
 .grind-stats .stat-tip { cursor: help; position: relative; }
 .grind-stats .stat-tip span { border-bottom: 1px dotted #9db2c9; padding-bottom: 1px; }
+
+/* ─── GRIND stat tiles: single compact row ─────────────────────── */
+.grind-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.grind-stats div { padding: 10px 14px; }
+.grind-stats strong { font-size: 22px; }
+.grind-stats span { font-size: 12px; }
