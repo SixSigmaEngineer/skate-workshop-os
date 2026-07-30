@@ -8,11 +8,11 @@
     <h2>General AI / API</h2>
     <label>AI provider
       <select name="provider" id="llmProvider">
-        <option value="none" {% if current_settings.provider == 'none' %}selected{% endif %}>No AI — local synthesis only</option>
-        <option value="lmstudio" {% if current_settings.provider == 'lmstudio' %}selected{% endif %}>LM Studio — local LLM on this computer</option>
-        <option value="openai" {% if current_settings.provider == 'openai' %}selected{% endif %}>OpenAI — GPT-5.6 family</option>
-        <option value="anthropic" {% if current_settings.provider == 'anthropic' %}selected{% endif %}>Anthropic — Claude</option>
-        <option value="openrouter" {% if current_settings.provider == 'openrouter' %}selected{% endif %}>OpenRouter — any hosted model</option>
+        <option value="none" {% if current_settings.provider == 'none' %}selected{% endif %}>No AI</option>
+        <option value="lmstudio" {% if current_settings.provider == 'lmstudio' %}selected{% endif %}>LM Studio (local)</option>
+        <option value="openai" {% if current_settings.provider == 'openai' %}selected{% endif %}>OpenAI</option>
+        <option value="anthropic" {% if current_settings.provider == 'anthropic' %}selected{% endif %}>Anthropic</option>
+        <option value="openrouter" {% if current_settings.provider == 'openrouter' %}selected{% endif %}>OpenRouter</option>
       </select>
     </label>
     <p class="muted">Choose how SKATE reasons. <strong>No AI</strong> keeps every feature that doesn't need a model — capture, governance, retrieval, graphs, exports, and a deterministic local synthesis. <strong>LM Studio</strong> keeps reasoning fully on this computer. Cloud providers trade privacy for stronger synthesis.</p>
@@ -31,47 +31,30 @@
 
     <div class="provider-block" data-provider="openai">
       <div class="two">
-        <label>OpenAI model — General / GRIND
+        <label>Model
           <select name="model" id="model">
             {% for item in model_options["openai"] %}
               <option value="{{ item.id }}" {% if current_settings.model == item.id %}selected{% endif %}>{{ item.label }}</option>
             {% endfor %}
           </select>
         </label>
-        <label>OpenAI Base URL<input name="openai_base_url" value="{{ current_settings.openai_base_url or 'https://api.openai.com/v1' }}"></label>
+        <label>Base URL<input name="openai_base_url" value="{{ current_settings.openai_base_url or 'https://api.openai.com/v1' }}"></label>
       </div>
-      <label>OpenAI API key
+      <label>API key
         <input name="openai_api_key" type="password" placeholder="{% if current_settings.api_key_present['openai'] %}Saved{% else %}Not saved{% endif %}">
       </label>
-      {% set smod = current_settings.spotter_model or current_settings.model %}
-      <div class="two">
-        <label>OpenAI model — Spotter
-          <select name="spotter_model" id="spotterModel">
-            {% for item in model_options["openai"] %}
-              <option value="{{ item.id }}" {% if smod == item.id %}selected{% endif %}>{{ item.label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label>Spotter reasoning
-          <select name="spotter_reasoning_effort">
-            {% for effort in ["none", "low", "medium", "high", "xhigh", "max"] %}
-              <option value="{{ effort }}" {% if current_settings.spotter_reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
-            {% endfor %}
-          </select>
-        </label>
-      </div>
     </div>
 
     <div class="provider-block" data-provider="anthropic">
       <div class="two">
-        <label>Claude model
+        <label>Model
           <select name="anthropic_model">
             {% for item in model_options["anthropic"] %}
               <option value="{{ item.id }}" {% if current_settings.anthropic_model == item.id %}selected{% endif %}>{{ item.label }}</option>
             {% endfor %}
           </select>
         </label>
-        <label>Anthropic API key
+        <label>API key
           <input name="anthropic_api_key" type="password" placeholder="{% if current_settings.api_key_present['anthropic'] %}Saved{% else %}Not saved{% endif %}">
         </label>
       </div>
@@ -80,8 +63,8 @@
 
     <div class="provider-block" data-provider="openrouter">
       <div class="two">
-        <label>OpenRouter model id<input name="openrouter_model" value="{{ current_settings.openrouter_model }}" placeholder="anthropic/claude-sonnet-5"></label>
-        <label>OpenRouter API key
+        <label>Model id<input name="openrouter_model" value="{{ current_settings.openrouter_model }}" placeholder="anthropic/claude-sonnet-5"></label>
+        <label>API key
           <input name="openrouter_api_key" type="password" placeholder="{% if current_settings.api_key_present['openrouter'] %}Saved{% else %}Not saved{% endif %}">
         </label>
       </div>
@@ -97,9 +80,9 @@
           {% endfor %}
         </select>
       </label>
-      <label>Max tokens<input name="max_tokens" type="number" min="128" max="16000" step="128" value="{{ current_settings.max_tokens }}"></label>
+      <label>Max output tokens<input name="max_tokens" type="number" min="128" max="16000" step="128" value="{{ current_settings.max_tokens }}"></label>
     </div>
-    <p class="muted"><strong>GRIND uses the provider and model selected above.</strong> Reasoning effort maps to each provider: OpenAI reasoning levels, Claude extended-thinking budgets, and OpenRouter reasoning effort. LM Studio models use their own settings; "none" disables extended reasoning.</p>
+    <p class="muted"><strong>GRIND uses the provider and model selected above.</strong> Reasoning effort maps to each provider: OpenAI reasoning levels, Claude extended-thinking budgets, and OpenRouter reasoning effort. LM Studio models use their own settings; "none" disables extended reasoning. Max output tokens is provider-agnostic — it caps how long a single response may be. SKATE automatically guarantees synthesis enough headroom (at least 6,000, more when extended thinking needs it), so raise this only if syntheses feel truncated.</p>
     <script>
       (function () {
         var select = document.getElementById("llmProvider");
@@ -122,6 +105,24 @@
       <label>Agent name<input name="spotter_name" value="{{ current_settings.spotter_name }}"></label>
       <label>Subtitle<input name="spotter_subtitle" value="{{ current_settings.spotter_subtitle }}"></label>
     </div>
+    {% set smod = current_settings.spotter_model or current_settings.model %}
+    <div class="two">
+      <label>Spotter model override (OpenAI provider)
+        <select name="spotter_model" id="spotterModel">
+          {% for item in model_options["openai"] %}
+            <option value="{{ item.id }}" {% if smod == item.id %}selected{% endif %}>{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Spotter reasoning
+        <select name="spotter_reasoning_effort">
+          {% for effort in ["none", "low", "medium", "high", "xhigh", "max"] %}
+            <option value="{{ effort }}" {% if current_settings.spotter_reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <p class="muted">Live facilitation favors speed: Spotter can use a faster model and lower reasoning than GRIND's deep synthesis. The model override applies when OpenAI is the provider; the reasoning level applies to every provider that supports one.</p>
     <label>System prompt / agent persona
       <textarea name="spotter_persona" rows="9">{{ current_settings.spotter_persona }}</textarea>
     </label>
