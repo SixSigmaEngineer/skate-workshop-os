@@ -21,6 +21,123 @@
 .grind-callout.hidden { opacity:0; }
 .mind-map text { paint-order:stroke; stroke:#ffffff; stroke-width:3px; stroke-linejoin:round; }
 .mind-map .node-type { stroke:none; font-weight:750; }
+.graph-node-search-wrap { display:none; }
+.grind-workspace.mode-2d {
+  gap:14px;
+  overflow:visible;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.grind-workspace.mode-2d .map-panel,
+.grind-workspace.mode-2d .legend-panel {
+  border:1px solid #dce5ef;
+  border-radius:16px;
+  background:#fff;
+  box-shadow:0 10px 28px rgba(39,61,89,.08);
+}
+.grind-workspace.mode-2d .map-panel { overflow:hidden; }
+.grind-workspace.mode-2d .map-toolbar {
+  border-color:#e2e9f1;
+  background:#fff;
+  color:#445673;
+}
+.grind-workspace.mode-2d .grind-controls .chk,
+.grind-workspace.mode-2d #mapStatus { color:#66778d; }
+.grind-workspace.mode-2d .seg-toggle { border-color:#ccd8e5; }
+.grind-workspace.mode-2d .seg-toggle .seg-btn { background:#fff; color:#53657e; }
+.grind-workspace.mode-2d .seg-toggle .seg-btn.active { background:#4d6fa3; color:#fff; }
+.grind-workspace.mode-2d .map-toolbar .button:not(.primary) {
+  border-color:#d5dfeb;
+  background:#f8fafc;
+  color:#3f536d;
+}
+.grind-workspace.mode-2d .mind-map {
+  min-height:560px;
+  height:min(74vh,760px);
+  border-radius:0 0 16px 16px;
+  background:
+    radial-gradient(circle at 48% 44%, rgba(203,219,239,.34), transparent 48%),
+    radial-gradient(circle at 18% 78%, rgba(219,231,242,.28), transparent 34%),
+    #f9fbfd;
+}
+.grind-workspace.mode-2d .legend-panel {
+  color:#34465d;
+}
+.grind-workspace.mode-2d .legend-panel h2 { color:#26384f; }
+.grind-workspace.mode-2d .legend-item:hover { background:#f2f6fa; }
+.grind-workspace.mode-2d .selected-node {
+  border-color:#dce5ef;
+  background:#f8fafc;
+  color:#53657c;
+}
+.grind-workspace.mode-2d .selected-node strong { color:#253950; }
+.grind-workspace.mode-2d .graph-node-search-wrap { display:block; margin-bottom:16px; }
+.graph-node-search-wrap input {
+  width:100%;
+  border:1px solid #d5dfeb;
+  background:#fff;
+  color:#26384f;
+  padding:9px 11px;
+  border-radius:7px;
+  font:inherit;
+}
+.graph-node-search-wrap input:focus { border-color:#6687c5; outline:2px solid rgba(102,135,197,.16); }
+.graph-search-results { display:grid; gap:3px; margin-top:6px; }
+.graph-search-result,
+.selected-neighbor {
+  width:100%;
+  border:0;
+  border-left:3px solid var(--node-color, #607ca8);
+  border-radius:4px;
+  background:transparent;
+  color:#52667f;
+  padding:5px 7px;
+  overflow:hidden;
+  text-align:left;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  cursor:pointer;
+  font:inherit;
+  font-size:12px;
+}
+.graph-search-result:hover,
+.selected-neighbor:hover { background:#eef4f9; color:#203750; }
+.selected-neighbors { display:grid; gap:3px; margin:12px 0; }
+.selected-neighbors > span { color:#8390a5; font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+.mode-2d .map-edge { fill:none; stroke-linecap:round; stroke-width:1.1; opacity:.30; transition:opacity .12s, stroke-width .12s; }
+.mode-2d .map-edge.theme-edge { stroke-dasharray:2 7; opacity:.18; }
+.mode-2d .map-edge.contains-edge { opacity:.32; }
+.mode-2d .map-edge.is-focus { opacity:.88; stroke-width:1.8; }
+.mode-2d .map-edge.is-dim { opacity:.035; }
+.mode-2d .map-node { cursor:pointer; transition:opacity .12s; }
+.mode-2d .map-node.is-dim,
+.mode-2d .map-node.is-search-dim { opacity:.13; }
+.mode-2d .node-halo { opacity:.13; filter:blur(2px); stroke:none; }
+.mode-2d .node-dot {
+  stroke:#fff;
+  stroke-width:1.15;
+  filter:drop-shadow(0 1px 3px rgba(40,61,88,.24));
+}
+.mode-2d .map-node.is-neighbor .node-halo { opacity:.25; }
+.mode-2d .map-node.is-focus .node-halo,
+.mode-2d .map-node.is-selected .node-halo { opacity:.48; }
+.mode-2d .map-node.is-focus .node-dot,
+.mode-2d .map-node.is-selected .node-dot { stroke:#fff; stroke-width:1.8; }
+.mode-2d .node-label {
+  fill:#34475f;
+  font-size:10px;
+  font-weight:550;
+  stroke:#f9fbfd;
+  stroke-width:4px;
+}
+.mode-2d .map-node.is-focus .node-label,
+.mode-2d .map-node.is-selected .node-label { fill:#172b44; font-weight:700; }
+.mode-2d .edge-label { fill:#52667f; stroke:#f9fbfd; stroke-width:4px; }
+@media (max-width:900px) {
+  .grind-workspace.mode-2d { grid-template-columns:1fr; }
+}
 .grind-loading { position:fixed; inset:0; z-index:50; background:rgba(17,24,32,.55); display:flex; align-items:center; justify-content:center; }
 .grind-loading.hidden { display:none; }
 .gl-card { background:#fff; border-radius:14px; padding:26px 30px; width:min(460px, calc(100vw - 48px)); text-align:center; box-shadow:0 18px 50px rgba(20,32,45,.3); }
@@ -95,7 +212,7 @@
   <div class="stat-tip" title="Typed moments captured inside notes with #P, #O, #Q, #A, #S, #R, #I markers. Each appears as a small colored satellite around its parent note — this is where most captured knowledge lives."><strong>{{ stats.signal_count | default(0) }}</strong><span>Signals</span></div>
 </section>
 
-<section class="grind-workspace">
+<section class="grind-workspace" id="grindWorkspace">
   <div class="map-panel">
     <div class="map-toolbar grind-controls">
       <div class="seg-toggle">
@@ -133,6 +250,10 @@
   </div>
 
   <aside class="legend-panel">
+    <div class="graph-node-search-wrap">
+      <input id="graphNodeSearch" type="search" placeholder="Search nodes..." autocomplete="off" aria-label="Search graph nodes">
+      <div class="graph-search-results" id="graphSearchResults"></div>
+    </div>
     <h2>Legend</h2>
     <div class="legend-list" id="legendList">
       {% for item in legend %}
@@ -232,6 +353,9 @@ let labelCtx = null;
 const grindSkater = document.getElementById("grindSkater");
 const grindFilters = document.getElementById("grindFilters");
 const grindRunField = document.getElementById("grindRunField");
+const grindWorkspace = document.getElementById("grindWorkspace");
+const graphNodeSearch = document.getElementById("graphNodeSearch");
+const graphSearchResults = document.getElementById("graphSearchResults");
 const loadedSession = "{{ filters.session }}";
 const pageGeneratedGrind = {% if grind_run %}true{% else %}false{% endif %};
 let showLabels = true;
@@ -249,8 +373,8 @@ function nodeVisible(node) {
 }
 // Obsidian-style sizing: small dots scaled by connectivity; signals smaller.
 function nodeRadius2d(node) {
-  if (node.is_signal) return 4;
-  return Math.min(14, 7 + Number(node.value || 1) * 1.6);
+  if (node.is_signal) return 3.2;
+  return Math.min(11, 5.2 + Number(node.value || 1) * 1.15);
 }
 function nodeRadius3d(node) {
   if (node.is_signal) return 6;
@@ -264,6 +388,8 @@ let orbit = { yaw: -0.55, pitch: 0.42, zoom: 760 };
 let pointer = { active: false, x: 0, y: 0 };
 let hitNodes = [];
 let hoverNodeId = "";
+let selectedNodeId = "";
+let searchQuery = "";
 let grinding = pageGeneratedGrind;
 let grindStartedAt = performance.now();
 let orbitAuto = pageGeneratedGrind;
@@ -272,13 +398,42 @@ const width = 1000;
 const height = 620;
 svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
 
+function stableFraction(value) {
+  let hash = 2166136261;
+  for (const char of String(value || "")) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return (hash >>> 0) / 4294967295;
+}
+
+const memoryGraphNodes = graphData.nodes.filter((node) => !node.is_signal);
+const themeFrequency = new Map();
+memoryGraphNodes.forEach((node) => (node.themes || []).forEach((theme) => {
+  themeFrequency.set(theme, (themeFrequency.get(theme) || 0) + 1);
+}));
+const clusterThemes = [...themeFrequency.entries()]
+  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  .slice(0, 6)
+  .map(([theme]) => theme);
+function nodeCluster(node) {
+  return (node.themes || []).find((theme) => clusterThemes.includes(theme))
+    || node.session_label
+    || node.entry_type
+    || "Notes";
+}
+const clusterKeys = [...new Set(memoryGraphNodes.map(nodeCluster))].sort();
+const clusterIndex = new Map(clusterKeys.map((key, index) => [key, index]));
+
 const nodeMap = new Map(graphData.nodes.map((node, index) => {
-  const angle = (Math.PI * 2 * index) / Math.max(1, graphData.nodes.length);
+  const key = nodeCluster(node);
+  const clusterNumber = clusterIndex.get(key) || 0;
+  const anchorAngle = clusterNumber * 2.3999632297 - 0.7;
+  const anchorRadius = clusterNumber === 0 ? 0 : 58 + Math.sqrt(clusterNumber) * 54;
+  const scatterAngle = stableFraction(`${node.id}:angle`) * Math.PI * 2;
+  const scatterRadius = 24 + stableFraction(`${node.id}:radius`) * 54;
   return [node.id, {
     ...node,
-    x: width / 2 + Math.cos(angle) * 230,
-    y: height / 2 + Math.sin(angle) * 200,
-    z: Math.sin(angle * 1.7) * 170 + (index % 3 - 1) * 55,
+    x: width / 2 + Math.cos(anchorAngle) * anchorRadius * 1.12 + Math.cos(scatterAngle) * scatterRadius,
+    y: height / 2 + Math.sin(anchorAngle) * anchorRadius * 0.72 + Math.sin(scatterAngle) * scatterRadius,
+    z: (stableFraction(`${node.id}:depth`) - 0.5) * 260 + (index % 3 - 1) * 35,
     vx: 0,
     vy: 0,
     vz: 0,
@@ -286,17 +441,30 @@ const nodeMap = new Map(graphData.nodes.map((node, index) => {
 }));
 const nodes = [...nodeMap.values()];
 // Signal satellites start beside their parent note instead of on the outer
-// ring, so they settle into orbit instead of slingshotting across the map.
-nodes.forEach((node) => {
-  if (!node.is_signal) return;
-  const parent = nodeMap.get(node.parent);
+// ring. Space siblings deterministically so a session switch cannot place
+// two bubbles on top of one another and inject a large physics impulse.
+const signalsByParent = new Map();
+nodes.filter((node) => node.is_signal).forEach((node) => {
+  if (!signalsByParent.has(node.parent)) signalsByParent.set(node.parent, []);
+  signalsByParent.get(node.parent).push(node);
+});
+signalsByParent.forEach((signals, parentId) => {
+  const parent = nodeMap.get(parentId);
   if (!parent) return;
-  const jitter = () => (Math.random() - 0.5) * 80;
-  node.x = parent.x + jitter();
-  node.y = parent.y + jitter();
-  node.z = (parent.z || 0) + jitter() * 0.6;
+  signals.forEach((node, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(1, signals.length) + 0.35;
+    const radius = 38 + (index % 3) * 9;
+    node.x = parent.x + Math.cos(angle) * radius;
+    node.y = parent.y + Math.sin(angle) * radius;
+    node.z = (parent.z || 0) + Math.sin(angle * 1.5) * 24;
+  });
 });
 const edges = graphData.edges.filter((edge) => nodeMap.has(edge.from) && nodeMap.has(edge.to));
+const adjacency = new Map(nodes.map((node) => [node.id, new Set()]));
+edges.forEach((edge) => {
+  adjacency.get(edge.from)?.add(edge.to);
+  adjacency.get(edge.to)?.add(edge.from);
+});
 const skatePath = edges.length
   ? edges.map((edge) => [edge.from, edge.to]).flat()
   : nodes.map((node) => node.id);
@@ -360,17 +528,20 @@ function setMapMode(nextMode) {
   if (!is3d && labelCtx && labelCanvas) labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
   document.getElementById("view3d").classList.toggle("active", is3d);
   document.getElementById("view2d").classList.toggle("active", !is3d);
+  grindWorkspace.classList.toggle("mode-2d", !is3d);
 }
 
-function physicsStep() {
+function physicsStep(forceScale = 1) {
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i], b = nodes[j];
         let dx = a.x - b.x, dy = a.y - b.y;
-        let dist2 = dx * dx + dy * dy || 1;
+        // A distance floor prevents nearly overlapping nodes from receiving
+        // an explosive repulsion impulse.
+        let dist2 = Math.max(dx * dx + dy * dy, 144);
         // Satellites carry a fraction of a note's charge: they gently
         // spread around their parent without shoving the whole map.
-        const force = (1700 * (a.is_signal ? 0.25 : 1) * (b.is_signal ? 0.25 : 1)) / dist2;
+        const force = ((150 * (a.is_signal ? 0.08 : 1) * (b.is_signal ? 0.08 : 1)) / dist2) * forceScale;
         a.vx += dx * force;
         a.vy += dy * force;
         a.vz += ((a.z - b.z) || 1) * force * 0.18;
@@ -385,9 +556,9 @@ function physicsStep() {
       const dx = b.x - a.x, dy = b.y - a.y;
       const dz = b.z - a.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-      const target = edge.type === "contains" ? 52 : (edge.type === "similar_to" ? 150 : 115);
+      const target = edge.type === "contains" ? 42 : (edge.type === "similar_to" ? 145 : 112);
       // Parent-satellite springs are stiff so signals stay in tight orbit.
-      const force = (dist - target) * (edge.type === "contains" ? 0.05 : 0.008);
+      const force = (dist - target) * (edge.type === "contains" ? 0.05 : 0.008) * forceScale;
       a.vx += (dx / dist) * force;
       a.vy += (dy / dist) * force;
       a.vz += (dz / dist) * force;
@@ -397,21 +568,32 @@ function physicsStep() {
     }
     for (const node of nodes) {
       if (node === dragNode) continue;
-      node.vx += (width / 2 - node.x) * 0.002;
-      node.vy += (height / 2 - node.y) * 0.002;
-      node.vz += (0 - node.z) * 0.002;
-      node.vx *= 0.82;
-      node.vy *= 0.82;
+      node.vx += (width / 2 - node.x) * 0.006 * forceScale;
+      node.vy += (height / 2 - node.y) * 0.006 * forceScale;
+      node.vz += (0 - node.z) * 0.002 * forceScale;
+      // Soft guards keep stray nodes reachable without arranging the graph
+      // against four hard walls.
+      if (node.x < 38) node.vx += (38 - node.x) * 0.035 * forceScale;
+      if (node.x > width - 38) node.vx -= (node.x - width + 38) * 0.035 * forceScale;
+      if (node.y < 38) node.vy += (38 - node.y) * 0.035 * forceScale;
+      if (node.y > height - 38) node.vy -= (node.y - height + 38) * 0.035 * forceScale;
+      node.vx *= 0.84;
+      node.vy *= 0.84;
       node.vz *= 0.82;
-      node.x = Math.max(90, Math.min(width - 90, node.x + node.vx));
-      node.y = Math.max(72, Math.min(height - 72, node.y + node.vy));
+      const velocityLimit = forceScale < 1 ? 1.8 : 7.5;
+      node.vx = Math.max(-velocityLimit, Math.min(velocityLimit, node.vx));
+      node.vy = Math.max(-velocityLimit, Math.min(velocityLimit, node.vy));
+      node.vz = Math.max(-velocityLimit, Math.min(velocityLimit, node.vz));
+      node.x += node.vx;
+      node.y += node.vy;
       node.z = Math.max(-320, Math.min(320, node.z + node.vz));
     }
 }
 
 // Settle the layout before the first paint so the map appears calm
 // instead of visibly bouncing into place.
-for (let warm = 0; warm < 160; warm++) physicsStep();
+for (let warm = 0; warm < 220; warm++) physicsStep();
+nodes.forEach((node) => { node.vx = 0; node.vy = 0; node.vz = 0; });
 
 function tick() {
   if (!paused && physics) {
@@ -419,12 +601,31 @@ function tick() {
       orbit.yaw += 0.0024;
       orbit.pitch = 0.36 + Math.sin(performance.now() / 1800) * 0.08;
     }
-    physicsStep();
+    // Keep the map responsive, but do not restart full-strength settling on
+    // every page load or session change.
+    physicsStep(0.12);
   }
   updateGrindInfo();
   render2d();
   render3d();
   requestAnimationFrame(tick);
+}
+
+function nodeMatchesSearch(node) {
+  if (!searchQuery) return true;
+  const haystack = [node.title_full, node.type_label, node.session_label, ...(node.themes || [])].join(" ").toLowerCase();
+  return haystack.includes(searchQuery);
+}
+
+function curvedRail(edge, a, b) {
+  if (edge.type === "contains") return { path: `M ${a.x} ${a.y} L ${b.x} ${b.y}`, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const seed = [...`${edge.from}:${edge.to}`].reduce((total, char) => total + char.charCodeAt(0), 0);
+  const bend = (seed % 2 ? 1 : -1) * Math.min(24, length * 0.075);
+  const cx = (a.x + b.x) / 2 - (dy / length) * bend;
+  const cy = (a.y + b.y) / 2 + (dx / length) * bend;
+  return { path: `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`, x: cx, y: cy };
 }
 
 function render2d() {
@@ -435,56 +636,80 @@ function render2d() {
     box.bottom + 4 < other.top || box.top - 4 > other.bottom
   ));
   const visibleNodes = nodes.filter(nodeVisible);
+  const focusId = hoverNodeId || selectedNodeId;
+  const focusNeighbors = adjacency.get(focusId) || new Set();
   visibleNodes.forEach((node) => {
     const radius = nodeRadius2d(node);
     occupied.push({ left: node.x - radius, right: node.x + radius, top: node.y - radius, bottom: node.y + radius });
   });
+
   const nodeLabels = new Map();
   if (showLabels) {
+    const labelLimit = Math.max(7, Math.min(20, Math.round(9 + view.scale * 5)));
     [...visibleNodes]
-      .sort((a, b) => Number(b.value || 1) - Number(a.value || 1))
+      .filter((node) => !node.is_signal || node.id === focusId || nodeMatchesSearch(node) && searchQuery)
+      .sort((a, b) => {
+        const aPriority = a.id === focusId ? 1000 : (focusNeighbors.has(a.id) ? 300 : 0) + Number(a.value || 0);
+        const bPriority = b.id === focusId ? 1000 : (focusNeighbors.has(b.id) ? 300 : 0) + Number(b.value || 0);
+        return bPriority - aPriority;
+      })
+      .slice(0, labelLimit)
       .forEach((node) => {
         const radius = nodeRadius2d(node);
-        const text = shortLabel(node.title_full);
-        const labelWidth = Math.max(42, text.length * 6.2);
-        const y = node.y - radius - 9;
+        const text = shortLabel(node.title_full, node.id === focusId ? 38 : 27);
+        const labelWidth = Math.max(42, text.length * 6.1);
+        const y = node.y - radius - 8;
         const box = { left: node.x - labelWidth / 2, right: node.x + labelWidth / 2, top: y - 12, bottom: y + 3 };
-        if (!overlaps(box)) {
+        if (node.id === focusId || !overlaps(box)) {
           occupied.push(box);
           nodeLabels.set(node.id, { text, y });
         }
       });
   }
+
   const edgeMarkup = edges.map((edge) => {
     const a = nodeMap.get(edge.from), b = nodeMap.get(edge.to);
     if (!a || !b || !railVisible(edge) || !nodeVisible(a) || !nodeVisible(b)) return "";
-    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    const dash = edge.dashes ? "6 5" : "";
+    const focused = Boolean(focusId && (edge.from === focusId || edge.to === focusId));
+    const searchDim = Boolean(searchQuery && !nodeMatchesSearch(a) && !nodeMatchesSearch(b));
+    const classes = [
+      "map-edge",
+      edge.shared ? "theme-edge" : "",
+      edge.type === "contains" ? "contains-edge" : "",
+      focused ? "is-focus" : "",
+      focusId && !focused || searchDim ? "is-dim" : "",
+    ].filter(Boolean).join(" ");
+    const curve = curvedRail(edge, a, b);
     let label = "";
-    if (showLabels && edge.label) {
-      const text = shortLabel(edge.label, 20);
-      const labelWidth = Math.max(30, text.length * 5.5);
-      const y = my - 4;
-      const box = { left: mx - labelWidth / 2, right: mx + labelWidth / 2, top: y - 10, bottom: y + 2 };
-      if (!overlaps(box)) {
-        occupied.push(box);
-        label = `<text class="edge-label" x="${mx}" y="${y}">${esc(text)}</text>`;
-      }
+    if (showLabels && focused && edge.label) {
+      label = `<text class="edge-label" x="${curve.x}" y="${curve.y - 4}">${esc(shortLabel(edge.label, 22))}</text>`;
     }
-    return `<line class="map-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${edgeColor(edge)}" stroke-dasharray="${dash}"></line>${label}`;
+    return `<path class="${classes}" d="${curve.path}" stroke="${edgeColor(edge)}"></path>${label}`;
   }).join("");
-  const nodeMarkup = nodes.map((node) => {
-    if (!nodeVisible(node)) return "";
+
+  const nodeMarkup = visibleNodes.map((node) => {
     const radius = nodeRadius2d(node);
+    const isFocus = node.id === focusId;
+    const isNeighbor = focusNeighbors.has(node.id);
+    const classes = [
+      "map-node",
+      node.is_signal ? "signal-node" : "memory-node",
+      isFocus ? "is-focus" : "",
+      node.id === selectedNodeId ? "is-selected" : "",
+      isNeighbor ? "is-neighbor" : "",
+      focusId && !isFocus && !isNeighbor ? "is-dim" : "",
+      !nodeMatchesSearch(node) ? "is-search-dim" : "",
+    ].filter(Boolean).join(" ");
     const themes = showThemes && node.themes ? `<text class="node-themes" x="${node.x}" y="${node.y + radius + 22}">${esc(node.themes.slice(0, 2).join(" / "))}</text>` : "";
     const labelInfo = nodeLabels.get(node.id);
     const label = labelInfo ? `<text class="node-label" x="${node.x}" y="${labelInfo.y}">${esc(labelInfo.text)}</text>` : "";
-    return `<g class="map-node" data-id="${esc(node.id)}">
-      ${label}
-      <circle cx="${node.x}" cy="${node.y}" r="${radius}" fill="${node.color}"></circle>
-      ${themes}
+    return `<g class="${classes}" data-id="${esc(node.id)}">
+      <circle class="node-halo" cx="${node.x}" cy="${node.y}" r="${radius + 5}" fill="${node.color}"></circle>
+      <circle class="node-dot" cx="${node.x}" cy="${node.y}" r="${radius}" fill="${node.color}"></circle>
+      ${label}${themes}
     </g>`;
   }).join("");
+
   let skaterMarkup = "";
   if (grinding && skatePath.length >= 2) {
     const step = (performance.now() - grindStartedAt) / 1000 * 0.55;
@@ -1183,12 +1408,66 @@ function drawLabelsOverlay(size, matrix) {
 function selectNode(id) {
   const node = nodeMap.get(id);
   if (!node) return;
+  selectedNodeId = id;
+  const neighbors = [...(adjacency.get(id) || [])]
+    .map((neighborId) => nodeMap.get(neighborId))
+    .filter(Boolean)
+    .sort((a, b) => Number(a.is_signal) - Number(b.is_signal) || Number(b.value || 0) - Number(a.value || 0))
+    .slice(0, 8);
+  const neighborMarkup = neighbors.length ? `<div class="selected-neighbors"><span>Connected (${adjacency.get(id).size})</span>${neighbors.map((neighbor) =>
+    `<button type="button" class="selected-neighbor" data-node-id="${esc(neighbor.id)}" style="--node-color:${esc(neighbor.color)}">${esc(neighbor.title_full)}</button>`
+  ).join("")}</div>` : "";
   selected.classList.remove("muted");
   selected.innerHTML = `<strong>${esc(node.title_full)}</strong>
     <p>${esc(node.type_label)}${node.session_label ? " / " + esc(node.session_label) : ""}</p>
     <p>${esc((node.themes || []).join(" / "))}</p>
+    ${neighborMarkup}
     <a class="button primary" href="${node.url}"><img class="button-icon" src="/static/icons/open.svg" alt="">Open Note</a>`;
 }
+
+function centerNode2d(node) {
+  if (!node) return;
+  view.scale = Math.max(1, Math.min(1.45, view.scale));
+  view.x = width / 2 - node.x * view.scale;
+  view.y = height / 2 - node.y * view.scale;
+}
+
+selected.addEventListener("click", (event) => {
+  const button = event.target.closest(".selected-neighbor");
+  if (!button) return;
+  const node = nodeMap.get(button.dataset.nodeId);
+  if (!node) return;
+  selectNode(node.id);
+  if (mode === "2d") centerNode2d(node);
+});
+
+function renderGraphSearchResults() {
+  if (!graphSearchResults) return;
+  if (!searchQuery) {
+    graphSearchResults.innerHTML = "";
+    return;
+  }
+  const matches = nodes
+    .filter((node) => nodeVisible(node) && nodeMatchesSearch(node))
+    .sort((a, b) => Number(a.is_signal) - Number(b.is_signal) || Number(b.value || 0) - Number(a.value || 0))
+    .slice(0, 7);
+  graphSearchResults.innerHTML = matches.length
+    ? matches.map((node) => `<button type="button" class="graph-search-result" data-node-id="${esc(node.id)}" style="--node-color:${esc(node.color)}">${esc(node.title_full)}</button>`).join("")
+    : '<span class="muted">No matching nodes</span>';
+}
+
+graphNodeSearch?.addEventListener("input", () => {
+  searchQuery = graphNodeSearch.value.trim().toLowerCase();
+  renderGraphSearchResults();
+});
+graphSearchResults?.addEventListener("click", (event) => {
+  const button = event.target.closest(".graph-search-result");
+  if (!button) return;
+  const node = nodeMap.get(button.dataset.nodeId);
+  if (!node) return;
+  selectNode(node.id);
+  centerNode2d(node);
+});
 
 function showGrindCallout(node) {
   if (!grindCallout || !node) return;
@@ -1224,23 +1503,27 @@ function hitTestCanvasNode(event) {
   return null;
 }
 
-function showTooltip(hit, event) {
-  if (!hit) {
+function showNodeTooltip(node, event, surface) {
+  if (!node) {
     hoverNodeId = "";
     mapTooltip.classList.add("hidden");
     return;
   }
-  hoverNodeId = hit.node.id;
-  const themes = hit.node.themes && hit.node.themes.length ? hit.node.themes.slice(0, 3).join(" / ") : "No themes yet";
-  mapTooltip.innerHTML = `<strong>${esc(hit.node.title_full)}</strong>
-    <span>${esc(hit.node.type_label)}${hit.node.session_label ? " · " + esc(hit.node.session_label) : ""}</span>
-    <span>${esc(themes)}</span>${hit.node.date ? `<span>${esc(hit.node.date)}</span>` : ""}`;
-  const panel = canvas.getBoundingClientRect();
+  hoverNodeId = node.id;
+  const themes = node.themes && node.themes.length ? node.themes.slice(0, 3).join(" / ") : "No themes yet";
+  mapTooltip.innerHTML = `<strong>${esc(node.title_full)}</strong>
+    <span>${esc(node.type_label)}${node.session_label ? " · " + esc(node.session_label) : ""}</span>
+    <span>${esc(themes)}</span>${node.date ? `<span>${esc(node.date)}</span>` : ""}`;
+  const panel = surface.closest(".map-panel").getBoundingClientRect();
   const x = Math.min(panel.width - 250, Math.max(12, event.clientX - panel.left + 14));
   const y = Math.min(panel.height - 95, Math.max(58, event.clientY - panel.top + 14));
   mapTooltip.style.left = `${x}px`;
   mapTooltip.style.top = `${y}px`;
   mapTooltip.classList.remove("hidden");
+}
+
+function showTooltip(hit, event) {
+  showNodeTooltip(hit ? hit.node : null, event, canvas);
 }
 
 svg.addEventListener("click", (event) => {
@@ -1282,7 +1565,11 @@ svg.addEventListener("pointermove", (event) => {
     view.x = pan2d.viewX + dx;
     view.y = pan2d.viewY + dy;
     pan2d.moved = pan2d.moved || Math.abs(dx) + Math.abs(dy) > 2;
+    showNodeTooltip(null, event, svg);
+    return;
   }
+  const group = event.target.closest(".map-node");
+  showNodeTooltip(group ? nodeMap.get(group.dataset.id) : null, event, svg);
 });
 function end2dPointer() {
   dragNode = null;
@@ -1291,6 +1578,7 @@ function end2dPointer() {
 }
 svg.addEventListener("pointerup", end2dPointer);
 svg.addEventListener("pointercancel", end2dPointer);
+svg.addEventListener("pointerleave", (event) => showNodeTooltip(null, event, svg));
 svg.addEventListener("wheel", (event) => {
   event.preventDefault();
   const rect = svg.getBoundingClientRect();

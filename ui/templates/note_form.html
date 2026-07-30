@@ -8,7 +8,17 @@
   </div>
   <div class="toolbar">
     <button class="button" type="button" id="compressBtn"><img class="button-icon" src="/static/icons/wand.svg" alt="">Clean/Compress Notes</button>
+    <span class="ai-action-progress" id="compressProgress" role="status" aria-live="polite" hidden>
+      <span class="ai-action-spinner" aria-hidden="true"></span>
+      <span id="compressProgressText">Reading your notes</span>
+      <span class="ai-action-elapsed" id="compressElapsed">0:00</span>
+    </span>
     <button class="button" type="button" id="suggestBtn"><img class="button-icon" src="/static/icons/wand.svg" alt="">Suggest Metadata</button>
+    <span class="ai-action-progress" id="suggestProgress" role="status" aria-live="polite" hidden>
+      <span class="ai-action-spinner" aria-hidden="true"></span>
+      <span id="suggestProgressText">Analyzing note</span>
+      <span class="ai-action-elapsed" id="suggestElapsed">0:00</span>
+    </span>
   </div>
 </section>
 
@@ -258,36 +268,75 @@ document.querySelectorAll(".theme-pick").forEach((button) => {
   });
 });
 document.getElementById("suggestBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("suggestBtn");
+  const progress = document.getElementById("suggestProgress");
+  const progressText = document.getElementById("suggestProgressText");
+  const elapsed = document.getElementById("suggestElapsed");
+  const originalLabel = btn.innerHTML;
+  const startedAt = Date.now();
+  const phases = ["Analyzing note", "Finding themes and topics", "Building metadata suggestions", "Still working with the AI"];
+  let phase = 0;
+  const updateProgress = () => {
+    const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    elapsed.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    phase = Math.min(Math.floor(seconds / 12), phases.length - 1);
+    progressText.textContent = phases[phase];
+  };
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  btn.innerHTML = '<img class="button-icon" src="/static/icons/wand.svg" alt="">Working&hellip;';
+  progress.hidden = false;
+  statusLine.classList.add("working");
   statusLine.textContent = "Suggesting metadata...";
-  const res = await fetch("/api/classify-note", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({title: document.querySelector("[name=title]").value, body: body.value})
-  });
-  const data = await res.json();
-  if (!data.ok) { statusLine.textContent = data.error || "Suggestion failed."; return; }
-  const s = data.suggestion;
-  document.getElementById("entryType").value = s.entry_type || document.getElementById("entryType").value;
-  document.getElementById("themes").value = (s.themes || []).join(", ");
-  document.getElementById("tags").value = (s.tags || []).join(", ");
-  saveDraft();
-  statusLine.textContent = data.message || s.reasoning || "Metadata suggested.";
+  updateProgress();
+  const progressTimer = setInterval(updateProgress, 1000);
+  try {
+    const res = await fetch("/api/classify-note", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({title: document.querySelector("[name=title]").value, body: body.value})
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Suggestion failed.");
+    const s = data.suggestion;
+    document.getElementById("entryType").value = s.entry_type || document.getElementById("entryType").value;
+    document.getElementById("themes").value = (s.themes || []).join(", ");
+    document.getElementById("tags").value = (s.tags || []).join(", ");
+    updateLineupFields();
+    saveDraft();
+    statusLine.textContent = data.message || s.reasoning || "Metadata suggested.";
+  } catch (err) {
+    statusLine.textContent = "Metadata suggestion failed: " + err.message;
+  } finally {
+    clearInterval(progressTimer);
+    statusLine.classList.remove("working");
+    progress.hidden = true;
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+    btn.innerHTML = originalLabel;
+  }
 });
 document.getElementById("compressBtn").addEventListener("click", async () => {
   const btn = document.getElementById("compressBtn");
+  const progress = document.getElementById("compressProgress");
+  const progressText = document.getElementById("compressProgressText");
+  const elapsed = document.getElementById("compressElapsed");
   const originalLabel = btn.innerHTML;
+  const startedAt = Date.now();
+  const phases = ["Reading your notes", "Cleaning and condensing", "Organizing signal markers", "Still working with the AI"];
+  const updateProgress = () => {
+    const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    elapsed.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    progressText.textContent = phases[Math.min(Math.floor(seconds / 12), phases.length - 1)];
+  };
   btn.disabled = true;
-  statusLine.classList.add("working");
-  let dots = 0;
-  const phases = ["Reading your notes", "Cleaning them up", "Organizing signals (#P, #O, #Q, #A)", "Almost there"];
-  let phase = 0;
-  statusLine.textContent = phases[0] + "...";
-  const pulse = setInterval(() => {
-    dots = (dots + 1) % 4;
-    if (dots === 0 && phase < phases.length - 1) phase += 1;
-    statusLine.textContent = phases[phase] + ".".repeat(dots + 1);
-  }, 700);
+  btn.setAttribute("aria-busy", "true");
   btn.innerHTML = '<img class="button-icon" src="/static/icons/wand.svg" alt="">Working&hellip;';
+  progress.hidden = false;
+  statusLine.classList.add("working");
+  statusLine.textContent = "Cleaning and compressing notes...";
+  updateProgress();
+  const progressTimer = setInterval(updateProgress, 1000);
   try {
     const res = await fetch("/api/compress-note", {
       method: "POST",
@@ -303,11 +352,13 @@ document.getElementById("compressBtn").addEventListener("click", async () => {
     insertIntoBody(data.markdown || "");
     statusLine.textContent = data.message || "Cleaned notes added — signals will appear in the mind map.";
   } catch (err) {
-    statusLine.textContent = "Cleaning failed: " + err;
+    statusLine.textContent = "Cleaning failed: " + err.message;
   } finally {
-    clearInterval(pulse);
+    clearInterval(progressTimer);
     statusLine.classList.remove("working");
+    progress.hidden = true;
     btn.disabled = false;
+    btn.removeAttribute("aria-busy");
     btn.innerHTML = originalLabel;
   }
 });

@@ -34,7 +34,13 @@ if (-not (Test-Path (Join-Path $DemoVault "conversations"))) {
 
 $env:PYTHONNOUSERSITE = "1"
 
-& $Python -m pip install --no-cache-dir pyinstaller
+& $Python -c "import PyInstaller" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    & $Python -m pip install --no-cache-dir pyinstaller
+    if ($LASTEXITCODE -ne 0) {
+        throw "PyInstaller is not installed and could not be downloaded."
+    }
+}
 
 Write-Host "`n[1/3] Building standalone app (PyInstaller onedir)..." -ForegroundColor Cyan
 & $Python -m PyInstaller `
@@ -146,15 +152,46 @@ Copy-Item -LiteralPath (Join-Path $Root "templates")                -Destination
 # Bundle the local Whisper models so transcription works fully offline out
 # of the box: no first-use download, no network touch, audio never leaves
 # the machine. Never send HuggingFace credentials for these public models.
-Write-Host "`nPre-downloading local Whisper models (tiny, base) into the vault seed..." -ForegroundColor Cyan
-$env:HF_HUB_DISABLE_IMPLICIT_TOKEN = "1"
-Remove-Item Env:HF_TOKEN, Env:HUGGING_FACE_HUB_TOKEN, Env:HUGGINGFACE_HUB_TOKEN -ErrorAction SilentlyContinue
+Write-Host "`nPreparing pinned local Whisper models (tiny, base) for the vault seed..." -ForegroundColor Cyan
+$WhisperCache = Join-Path $Root "build\model-cache\whisper"
 $SeedModels = Join-Path $Seed "models\whisper"
-New-Item -ItemType Directory -Force -Path $SeedModels | Out-Null
-& $Python -c "from faster_whisper import WhisperModel; [WhisperModel(m, device='cpu', compute_type='int8', download_root=r'$SeedModels') for m in ('tiny', 'base')]; print('Whisper models bundled.')"
-if ($LASTEXITCODE -ne 0) {
-    throw "Whisper model pre-download failed. Check the network and rerun."
+$WhisperFiles = @("config.json", "model.bin", "tokenizer.json", "vocabulary.txt")
+$WhisperModels = @(
+    @{ Name = "tiny"; Revision = "d90ca5fe260221311c53c58e660288d3deb8d356" },
+    @{ Name = "base"; Revision = "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66" }
+)
+$LocalSnapshots = @()
+foreach ($model in $WhisperModels) {
+    $RepoName = "models--Systran--faster-whisper-$($model.Name)"
+    $RepoDir = Join-Path $WhisperCache $RepoName
+    $SnapshotDir = Join-Path $RepoDir "snapshots\$($model.Revision)"
+    $RefsDir = Join-Path $RepoDir "refs"
+    New-Item -ItemType Directory -Force -Path $SnapshotDir, $RefsDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $RefsDir "main") -Value $model.Revision -NoNewline -Encoding ascii
+    foreach ($file in $WhisperFiles) {
+        $Destination = Join-Path $SnapshotDir $file
+        if (-not (Test-Path -LiteralPath $Destination)) {
+            $Uri = "https://huggingface.co/Systran/faster-whisper-$($model.Name)/resolve/$($model.Revision)/$file"
+            Write-Host "    downloading Whisper $($model.Name): $file"
+            try {
+                Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Destination -TimeoutSec 600
+            } catch {
+                Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+                throw "Whisper $($model.Name) model download failed for $file. $($_.Exception.Message)"
+            }
+        }
+    }
+    $LocalSnapshots += $SnapshotDir
 }
+
+# Load the pinned local folders directly. This validates the model files
+# without asking the Python HTTP stack to contact Hugging Face again.
+& $Python -c "import sys; from faster_whisper import WhisperModel; [WhisperModel(path, device='cpu', compute_type='int8') for path in sys.argv[1:]]; print('Whisper models validated.')" @LocalSnapshots
+if ($LASTEXITCODE -ne 0) {
+    throw "Whisper model validation failed. Delete build\model-cache and rerun."
+}
+New-Item -ItemType Directory -Force -Path $SeedModels | Out-Null
+Copy-Item -Path (Join-Path $WhisperCache "*") -Destination $SeedModels -Recurse -Force
 
 # Optional skills ship with the app when present.
 foreach ($name in @("skills")) {

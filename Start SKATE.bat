@@ -30,7 +30,9 @@ if not exist "%SKATE_APP_PATH%" (
 )
 
 if exist "%SKATE_PID_FILE%" (
-    powershell -NoProfile -Command "$serverId = [int](Get-Content -LiteralPath $env:SKATE_PID_FILE -ErrorAction SilentlyContinue); if ($serverId -and (Get-Process -Id $serverId -ErrorAction SilentlyContinue)) { exit 0 } else { exit 1 }"
+    rem A Windows PID can be reused after SKATE exits. Trust the saved PID only
+    rem when it is our private Python and the SKATE page is actually reachable.
+    powershell -NoProfile -Command "$serverId = [int](Get-Content -LiteralPath $env:SKATE_PID_FILE -ErrorAction SilentlyContinue); $serverProcess = Get-Process -Id $serverId -ErrorAction SilentlyContinue; if (-not $serverProcess -or -not [string]::Equals($serverProcess.Path, $env:SKATE_PYTHON, [System.StringComparison]::OrdinalIgnoreCase)) { exit 1 }; try { $response = Invoke-WebRequest -UseBasicParsing -Uri $env:SKATE_URL -TimeoutSec 2; if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500 -and $response.Content -match '<title>SKATE') { exit 0 } } catch {}; exit 1"
     if not errorlevel 1 (
         echo SKATE is already running at %SKATE_URL%.
         start "" "%SKATE_URL%"

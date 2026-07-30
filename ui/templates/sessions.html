@@ -27,7 +27,186 @@
           <span>{{ entry_types.get(key, {"label": key}).label }} {{ count }}</span>
         {% endfor %}
       </div>
+      <div class="session-card-actions">
+        <button
+          class="button session-review-button"
+          type="button"
+          data-session="{{ row.key }}"
+          data-session-label="{{ row.label }}"
+          data-review-available="{{ 'false' if row.status == 'inactive' or not row.count else 'true' }}"
+          {% if row.status == "inactive" or not row.count %}disabled{% endif %}
+        ><img class="button-icon" src="/static/icons/wand.svg" alt="">Review Connections</button>
+      </div>
     </article>
   {% endfor %}
 </div>
+
+<dialog class="connection-review-dialog" id="connectionReviewDialog">
+  <div class="connection-review-head">
+    <div>
+      <p class="eyebrow">SESSION REVIEW</p>
+      <h2 id="connectionReviewTitle">Review Connections</h2>
+    </div>
+    <button class="dialog-close" type="button" id="closeConnectionReview" aria-label="Close connection review">×</button>
+  </div>
+  <div class="connection-review-progress" id="connectionReviewProgress" hidden>
+    <span class="ai-action-spinner" aria-hidden="true"></span>
+    <span id="connectionReviewPhase">Reading session notes</span>
+    <span class="ai-action-elapsed" id="connectionReviewElapsed">0:00</span>
+  </div>
+  <p class="muted" id="connectionReviewMessage"></p>
+  <div id="connectionReviewResults"></div>
+  <div class="connection-review-actions">
+    <button class="button" type="button" id="cancelConnectionReview">Close</button>
+    <button class="button primary" type="button" id="applyConnectionReview" disabled>Apply Selected</button>
+  </div>
+</dialog>
+
+<script>
+const connectionReviewDialog = document.getElementById("connectionReviewDialog");
+const connectionReviewTitle = document.getElementById("connectionReviewTitle");
+const connectionReviewProgress = document.getElementById("connectionReviewProgress");
+const connectionReviewPhase = document.getElementById("connectionReviewPhase");
+const connectionReviewElapsed = document.getElementById("connectionReviewElapsed");
+const connectionReviewMessage = document.getElementById("connectionReviewMessage");
+const connectionReviewResults = document.getElementById("connectionReviewResults");
+const applyConnectionReview = document.getElementById("applyConnectionReview");
+let activeConnectionSession = "";
+let activeConnectionReview = null;
+
+function escapeReviewHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+  })[char]);
+}
+
+function reviewList(values) {
+  return (values || []).map(escapeReviewHtml).join(", ") || "None";
+}
+
+function setConnectionReviewLoading(working, phase = "Reading session notes") {
+  connectionReviewProgress.hidden = !working;
+  connectionReviewPhase.textContent = phase;
+  document.querySelectorAll(".session-review-button").forEach((button) => {
+    button.disabled = working || button.dataset.reviewAvailable !== "true";
+  });
+}
+
+function renderConnectionReview(review) {
+  const metadata = review.metadata || [];
+  const relationships = review.relationships || [];
+  if (!metadata.length && !relationships.length) {
+    connectionReviewResults.innerHTML = '<div class="connection-review-empty"><strong>No missing connections found.</strong><p>The session already has usable metadata, or the local review found nothing it could safely propose.</p></div>';
+    applyConnectionReview.disabled = true;
+    return;
+  }
+  let html = "";
+  if (metadata.length) {
+    html += `<section class="connection-review-section"><h3>Metadata improvements <span>${metadata.length}</span></h3>`;
+    metadata.forEach((item, index) => {
+      const typeChange = item.current_type !== item.entry_type
+        ? `<div><strong>Type:</strong> ${escapeReviewHtml(item.current_type)} → ${escapeReviewHtml(item.entry_type)}</div>` : "";
+      html += `<label class="connection-proposal">
+        <input type="checkbox" data-review-kind="metadata" data-review-index="${index}" checked>
+        <span><strong>${escapeReviewHtml(item.title)}</strong>${typeChange}
+        <div><strong>Themes:</strong> ${reviewList(item.themes)}</div>
+        <div><strong>Tags:</strong> ${reviewList(item.tags)}</div>
+        <small>${escapeReviewHtml(item.reason)}</small></span>
+      </label>`;
+    });
+    html += "</section>";
+  }
+  if (relationships.length) {
+    html += `<section class="connection-review-section"><h3>Evidence connections <span>${relationships.length}</span></h3>`;
+    relationships.forEach((item, index) => {
+      html += `<label class="connection-proposal">
+        <input type="checkbox" data-review-kind="relationships" data-review-index="${index}" checked>
+        <span><strong>${escapeReviewHtml(item.source_title)}</strong>
+        <div class="connection-arrow"><b>${escapeReviewHtml(item.type_label)}</b> → ${escapeReviewHtml(item.target_title)}</div>
+        <small>${escapeReviewHtml(item.note)}</small></span>
+      </label>`;
+    });
+    html += "</section>";
+  }
+  connectionReviewResults.innerHTML = html;
+  applyConnectionReview.disabled = false;
+  connectionReviewResults.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      applyConnectionReview.disabled = !connectionReviewResults.querySelector("input[type=checkbox]:checked");
+    });
+  });
+}
+
+document.querySelectorAll(".session-review-button").forEach((button) => {
+  button.addEventListener("click", async () => {
+    activeConnectionSession = button.dataset.session;
+    activeConnectionReview = null;
+    connectionReviewTitle.textContent = `Review ${button.dataset.sessionLabel}`;
+    connectionReviewMessage.textContent = "SKATE will inspect the active notes in this session and propose changes for your approval.";
+    connectionReviewResults.innerHTML = "";
+    applyConnectionReview.disabled = true;
+    connectionReviewDialog.showModal();
+    setConnectionReviewLoading(true);
+    const startedAt = Date.now();
+    const phases = ["Reading session notes", "Checking metadata coverage", "Comparing evidence and signals", "Building reviewable proposals", "Still working with the AI"];
+    const updateProgress = () => {
+      const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      connectionReviewElapsed.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+      connectionReviewPhase.textContent = phases[Math.min(Math.floor(seconds / 12), phases.length - 1)];
+    };
+    updateProgress();
+    const timer = setInterval(updateProgress, 1000);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(activeConnectionSession)}/review-connections`, {method: "POST"});
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "Session review failed.");
+      activeConnectionReview = data.review;
+      connectionReviewMessage.textContent = data.message;
+      renderConnectionReview(data.review);
+    } catch (error) {
+      connectionReviewMessage.textContent = `Connection review failed: ${error.message}`;
+      connectionReviewResults.innerHTML = '<div class="connection-review-empty">No notes were changed. You can close this review and try again.</div>';
+    } finally {
+      clearInterval(timer);
+      setConnectionReviewLoading(false);
+    }
+  });
+});
+
+applyConnectionReview.addEventListener("click", async () => {
+  if (!activeConnectionReview || !activeConnectionSession) return;
+  const selected = {metadata: [], relationships: []};
+  connectionReviewResults.querySelectorAll("input[type=checkbox]:checked").forEach((checkbox) => {
+    selected[checkbox.dataset.reviewKind].push(
+      activeConnectionReview[checkbox.dataset.reviewKind][Number(checkbox.dataset.reviewIndex)]
+    );
+  });
+  applyConnectionReview.disabled = true;
+  setConnectionReviewLoading(true, "Applying approved connections");
+  connectionReviewMessage.textContent = "Updating the selected memory objects...";
+  try {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(activeConnectionSession)}/apply-connections`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(selected)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not apply the selected proposals.");
+    connectionReviewMessage.textContent = data.message;
+    connectionReviewResults.innerHTML = `<div class="connection-review-success"><strong>Session updated.</strong><p>${escapeReviewHtml(data.files_updated)} note file(s) changed. The Grind will draw the approved rails automatically.</p><a class="button" href="/grind?session=${encodeURIComponent(activeConnectionSession)}">Open in The Grind</a></div>`;
+  } catch (error) {
+    connectionReviewMessage.textContent = `Could not apply connections: ${error.message}`;
+    applyConnectionReview.disabled = false;
+  } finally {
+    setConnectionReviewLoading(false);
+  }
+});
+
+function closeConnectionReviewDialog() {
+  if (!connectionReviewProgress.hidden) return;
+  connectionReviewDialog.close();
+}
+document.getElementById("closeConnectionReview").addEventListener("click", closeConnectionReviewDialog);
+document.getElementById("cancelConnectionReview").addEventListener("click", closeConnectionReviewDialog);
+</script>
 {% endblock %}

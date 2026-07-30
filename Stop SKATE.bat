@@ -7,6 +7,9 @@ REM      Stop SKATE.bat 8765       (stops a specific port)
 REM ============================================================
 setlocal enabledelayedexpansion
 
+set "SKATE_ROOT=%~dp0"
+set "SKATE_PID_FILE=%SKATE_ROOT%.skate-server.pid"
+
 set "PORTS=%~1"
 if "%PORTS%"=="" set "PORTS=8765 8766"
 
@@ -26,6 +29,7 @@ for %%Q in (%PORTS%) do (
             echo   Stopped PID %%P.
         )
     )
+    if "%%Q"=="8765" if exist "%SKATE_PID_FILE%" del /q "%SKATE_PID_FILE%" >nul 2>nul
 )
 
 if not defined ANY echo No SKATE server was found on port^(s^) %PORTS%.

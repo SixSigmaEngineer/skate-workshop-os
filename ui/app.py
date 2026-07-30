@@ -1884,6 +1884,211 @@ def _normalize_metadata_suggestion(raw: dict, fallback: dict) -> dict:
     }
 
 
+CONNECTION_REVIEW_RELATIONSHIPS = {"supports", "contradicts", "causes", "leads_to", "references"}
+
+
+def _active_session_entries(session_key: str) -> list:
+    """Return active memory objects in one session for bounded review."""
+    session = _slugify(session_key)
+    session_path = SESSIONS / session / "README.md"
+    if session_path.exists():
+        session_post = frontmatter.load(session_path, encoding="utf-8")
+        if str(session_post.metadata.get("status", "active")).strip().lower() == "inactive":
+            return []
+    return [
+        entry
+        for entry in filter_entries(load_all_entries(), session=session)
+        if entry.status.strip().lower() != "inactive"
+        and entry.session_status.strip().lower() != "inactive"
+    ]
+
+
+def _local_connection_review(entries: list) -> dict:
+    """Audit obvious missing metadata without inventing semantic evidence links."""
+    metadata = []
+    for entry in entries:
+        fallback = _local_metadata_suggestion(entry.title, entry.body)
+        themes = list(entry.themes)
+        for theme in fallback["themes"]:
+            if theme not in themes:
+                themes.append(theme)
+        if themes != entry.themes:
+            metadata.append(
+                {
+                    "file_id": entry.file_id,
+                    "title": entry.title,
+                    "current_type": entry.entry_type,
+                    "entry_type": entry.entry_type,
+                    "current_themes": list(entry.themes),
+                    "themes": themes[:7],
+                    "current_tags": list(entry.tags),
+                    "tags": list(entry.tags),
+                    "reason": "Local review found a consulting theme in the note text.",
+                }
+            )
+    return {"metadata": metadata, "relationships": [], "mode": "local"}
+
+
+def _connection_review_prompt(session_label: str, entries: list) -> str:
+    per_note_limit = max(350, min(2200, 36000 // max(1, len(entries))))
+    notes = []
+    for entry in entries:
+        signals = {
+            marker_type: texts[:8]
+            for marker_type, texts in capture_markers(entry).items()
+            if texts
+        }
+        notes.append(
+            {
+                "file_id": entry.file_id,
+                "title": entry.title,
+                "type": entry.entry_type,
+                "themes": entry.themes,
+                "tags": entry.tags,
+                "existing_relationships": entry.relationships,
+                "signals": signals,
+                "body": entry.body[:per_note_limit],
+            }
+        )
+    return f"""You are reviewing one SKATE workshop session for missing metadata and evidence connections.
+
+Session: {session_label}
+
+Use only the supplied active notes. Never invent a note or identifier. Prefer a small set of strong,
+defensible relationships over many weak similarities. Shared themes are already connected automatically,
+so do not create relationships merely because two notes share a theme.
+
+Return only JSON with:
+{{
+  "metadata": [
+    {{
+      "file_id": "exact supplied file_id",
+      "entry_type": "one valid memory object type",
+      "themes": ["3 to 7 consistent semantic themes"],
+      "tags": ["3 to 7 short lowercase tags"],
+      "reason": "why this metadata needs attention"
+    }}
+  ],
+  "relationships": [
+    {{
+      "source": "exact supplied file_id",
+      "target": "different exact supplied file_id",
+      "type": "supports|contradicts|causes|leads_to|references",
+      "note": "short evidence-grounded explanation"
+    }}
+  ]
+}}
+
+Metadata rules:
+- Include a metadata item only when metadata is missing, generic, inconsistent, or clearly incomplete.
+- Preserve good existing themes and tags; include them in the proposed arrays alongside additions.
+- Do not change a specific object type without clear evidence.
+- Use consistent spelling and capitalization for themes across the session.
+
+Relationship rules:
+- Do not repeat an existing relationship in either direction.
+- A hashtag signal is evidence inside its parent note; connect the parent notes when their content has a
+  meaningful supports, contradicts, causes, leads_to, or references relationship.
+- Each relationship explanation must make the connection reviewable by a human.
+- Return at most 20 metadata items and 24 relationships.
+
+Valid memory object types: {", ".join(ENTRY_TYPES.keys())}
+
+Session notes:
+{json.dumps(notes, ensure_ascii=False)}
+"""
+
+
+def _normalize_connection_review(raw: dict, entries: list, mode: str = "ai") -> dict:
+    by_id = {entry.file_id: entry for entry in entries}
+    metadata = []
+    seen_metadata = set()
+    for item in raw.get("metadata", []) if isinstance(raw.get("metadata", []), list) else []:
+        if not isinstance(item, dict):
+            continue
+        file_id = str(item.get("file_id", "")).strip()
+        entry = by_id.get(file_id)
+        if entry is None or file_id in seen_metadata:
+            continue
+        themes = list(entry.themes)
+        proposed_themes = item.get("themes", []) if isinstance(item.get("themes", []), list) else []
+        for theme in _coerce_theme_csv(", ".join(str(value) for value in proposed_themes)):
+            if theme not in themes:
+                themes.append(theme)
+        tags = list(entry.tags)
+        proposed_tags = item.get("tags", []) if isinstance(item.get("tags", []), list) else []
+        for value in proposed_tags:
+            tag = re.sub(r"[^a-z0-9-]+", "-", str(value).strip().lower()).strip("-")
+            if tag and tag not in tags:
+                tags.append(tag)
+        entry_type = _clean_entry_type(str(item.get("entry_type", entry.entry_type)))
+        if themes == entry.themes and tags == entry.tags and entry_type == entry.entry_type:
+            continue
+        seen_metadata.add(file_id)
+        metadata.append(
+            {
+                "file_id": file_id,
+                "title": entry.title,
+                "current_type": entry.entry_type,
+                "entry_type": entry_type,
+                "current_themes": list(entry.themes),
+                "themes": themes[:7],
+                "current_tags": list(entry.tags),
+                "tags": tags[:7],
+                "reason": str(item.get("reason", "")).strip() or "Metadata gap found during session review.",
+            }
+        )
+
+    existing = set()
+    for entry in entries:
+        for relationship in entry.relationships:
+            target = str(relationship.get("target", "")).strip()
+            target_entry = by_id.get(target) or next(
+                (candidate for candidate in entries if candidate.path.name == target), None
+            )
+            if target_entry:
+                existing.add((entry.file_id, target_entry.file_id, relationship.get("type", "references")))
+                existing.add((target_entry.file_id, entry.file_id, relationship.get("type", "references")))
+
+    relationships = []
+    seen_relationships = set()
+    for item in raw.get("relationships", []) if isinstance(raw.get("relationships", []), list) else []:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source", "")).strip()
+        target = str(item.get("target", "")).strip()
+        rel_type = str(item.get("type", "")).strip().lower().replace("-", "_")
+        key = (source, target, rel_type)
+        reverse_key = (target, source, rel_type)
+        if (
+            source not in by_id
+            or target not in by_id
+            or source == target
+            or rel_type not in CONNECTION_REVIEW_RELATIONSHIPS
+            or key in existing
+            or reverse_key in existing
+            or key in seen_relationships
+            or reverse_key in seen_relationships
+        ):
+            continue
+        note = str(item.get("note", "")).strip()
+        if not note:
+            continue
+        seen_relationships.add(key)
+        relationships.append(
+            {
+                "source": source,
+                "source_title": by_id[source].title,
+                "target": target,
+                "target_title": by_id[target].title,
+                "type": rel_type,
+                "type_label": RELATIONSHIP_TYPES[rel_type],
+                "note": note[:300],
+            }
+        )
+    return {"metadata": metadata[:20], "relationships": relationships[:24], "mode": mode}
+
+
 def _slugify(value: str) -> str:
     value = value.lower().strip()
     value = re.sub(r"[^a-z0-9]+", "-", value)
@@ -2446,6 +2651,118 @@ async def update_session_status(request: Request, session_key: str):
     if str(form.get("return_to", "")).strip() == "sessions":
         return RedirectResponse(url="/sessions", status_code=303)
     return RedirectResponse(url=f"/session/{session}", status_code=303)
+
+
+@app.post("/api/sessions/{session_key}/review-connections")
+async def review_session_connections(session_key: str):
+    session = _slugify(session_key)
+    entries = _active_session_entries(session)
+    if not entries:
+        return JSONResponse(
+            {"ok": False, "error": "This session has no active notes to review."},
+            status_code=404,
+        )
+    label = entries[0].session_display or session.replace("-", " ").title()
+    fallback = _local_connection_review(entries)
+    settings = _load_settings()
+    if not _llm_available(settings):
+        review = _normalize_connection_review(fallback, entries, mode="local")
+        return {
+            "ok": True,
+            "review": review,
+            "session": session,
+            "session_label": label,
+            "note_count": len(entries),
+            "message": f"{_llm_unavailable_reason(settings)}, so SKATE completed a local metadata audit. Semantic evidence links require an AI provider.",
+        }
+    try:
+        response_text = _call_llm(settings, _connection_review_prompt(label, entries))
+        raw = _extract_json_object(response_text)
+        review = _normalize_connection_review(raw, entries, mode="ai")
+        return {
+            "ok": True,
+            "review": review,
+            "session": session,
+            "session_label": label,
+            "note_count": len(entries),
+            "message": f"Reviewed {len(entries)} active notes with {_active_model(settings)}. Select the proposals you want SKATE to apply.",
+        }
+    except (ValueError, KeyError, json.JSONDecodeError, HTTPError, URLError, TimeoutError, OSError) as exc:
+        review = _normalize_connection_review(fallback, entries, mode="local")
+        return {
+            "ok": True,
+            "review": review,
+            "session": session,
+            "session_label": label,
+            "note_count": len(entries),
+            "message": f"AI review failed, so SKATE completed a local metadata audit. {exc}",
+        }
+
+
+@app.post("/api/sessions/{session_key}/apply-connections")
+async def apply_session_connections(request: Request, session_key: str):
+    try:
+        payload = json.loads((await request.body()).decode("utf-8"))
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Could not read the selected proposals."}, status_code=400)
+
+    session = _slugify(session_key)
+    entries = _active_session_entries(session)
+    if not entries:
+        return JSONResponse(
+            {"ok": False, "error": "This session has no active notes to update."},
+            status_code=404,
+        )
+    raw = {
+        "metadata": payload.get("metadata", []),
+        "relationships": payload.get("relationships", []),
+    }
+    review = _normalize_connection_review(raw, entries, mode="approved")
+    by_id = {entry.file_id: entry for entry in entries}
+    changed_files = set()
+    metadata_count = 0
+    relationship_count = 0
+
+    for suggestion in review["metadata"]:
+        entry = by_id[suggestion["file_id"]]
+        post = frontmatter.load(entry.path, encoding="utf-8")
+        post.metadata["type"] = suggestion["entry_type"]
+        post.metadata["themes"] = suggestion["themes"]
+        post.metadata["tags"] = suggestion["tags"]
+        entry.path.write_text(frontmatter.dumps(post), encoding="utf-8")
+        changed_files.add(entry.file_id)
+        metadata_count += 1
+
+    # Reload changed notes so relationship application preserves metadata edits.
+    entries = _active_session_entries(session)
+    by_id = {entry.file_id: entry for entry in entries}
+    for suggestion in review["relationships"]:
+        source = by_id.get(suggestion["source"])
+        if source is None:
+            continue
+        post = frontmatter.load(source.path, encoding="utf-8")
+        relationships = post.metadata.get("relationships", [])
+        if not isinstance(relationships, list):
+            relationships = []
+        relationships.append(
+            {
+                "type": suggestion["type"],
+                "target": suggestion["target"],
+                "note": suggestion["note"],
+            }
+        )
+        post.metadata["relationships"] = relationships
+        source.path.write_text(frontmatter.dumps(post), encoding="utf-8")
+        changed_files.add(source.file_id)
+        relationship_count += 1
+
+    return {
+        "ok": True,
+        "metadata_applied": metadata_count,
+        "relationships_applied": relationship_count,
+        "files_updated": len(changed_files),
+        "message": f"Applied {metadata_count} metadata update(s) and {relationship_count} evidence connection(s).",
+    }
 
 
 @app.get("/entry/{file_id:path}", response_class=HTMLResponse)

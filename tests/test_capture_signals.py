@@ -85,6 +85,29 @@ class CaptureSignalSyntaxTests(unittest.TestCase):
         # not merged into one paragraph.
         self.assertGreaterEqual(response.text.count("capture-line-p"), 2)
 
+    def test_grind_prewarms_a_deterministic_calm_signal_layout(self):
+        template = (ROOT / "ui" / "templates" / "graph.html").read_text(encoding="utf-8")
+        self.assertIn("signalsByParent", template)
+        self.assertIn("function stableFraction", template)
+        self.assertIn("const clusterThemes", template)
+        self.assertNotIn("Math.random()", template)
+        self.assertIn("Math.max(dx * dx + dy * dy, 144)", template)
+        self.assertNotIn("Math.max(90, Math.min(width - 90", template)
+        self.assertIn("Soft guards keep stray nodes reachable", template)
+        self.assertIn("nodes.forEach((node) => { node.vx = 0; node.vy = 0; node.vz = 0; });", template)
+        self.assertIn("physicsStep(0.12)", template)
+
+    def test_grind_2d_has_lightweight_exploration_controls(self):
+        template = (ROOT / "ui" / "templates" / "graph.html").read_text(encoding="utf-8")
+        self.assertIn('id="grindWorkspace"', template)
+        self.assertIn('id="graphNodeSearch"', template)
+        self.assertIn("function curvedRail", template)
+        self.assertIn('class="node-halo"', template)
+        self.assertIn('class="selected-neighbors"', template)
+        self.assertIn('classList.toggle("mode-2d"', template)
+        self.assertIn("#f9fbfd", template)
+        self.assertIn("background:transparent", template)
+
 
 if __name__ == "__main__":
     unittest.main()
