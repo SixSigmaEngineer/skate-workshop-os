@@ -233,3 +233,20 @@ class SkaterLevelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpotterProviderOverrideTests(unittest.TestCase):
+    def test_anthropic_spotter_override_applies(self):
+        settings = _settings("anthropic", spotter_anthropic_model="claude-haiku-4-5-20251001")
+        eff = skate_app._feature_settings(settings, "spotter")
+        self.assertEqual(skate_app._active_model(eff), "claude-haiku-4-5-20251001")
+
+    def test_anthropic_spotter_override_ignored_on_openai(self):
+        settings = _settings("openai", spotter_anthropic_model="claude-haiku-4-5-20251001")
+        eff = skate_app._feature_settings(settings, "spotter")
+        self.assertEqual(skate_app._active_model(eff), "gpt-5.6")
+
+    def test_empty_override_means_general_model(self):
+        settings = _settings("anthropic", spotter_anthropic_model="")
+        eff = skate_app._feature_settings(settings, "spotter")
+        self.assertEqual(skate_app._active_model(eff), "claude-sonnet-5")

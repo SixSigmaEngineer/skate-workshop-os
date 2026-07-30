@@ -107,22 +107,30 @@
     </div>
     {% set smod = current_settings.spotter_model or current_settings.model %}
     <div class="two">
-      <label>Spotter model override (OpenAI provider)
+      <label>Spotter model — OpenAI
         <select name="spotter_model" id="spotterModel">
           {% for item in model_options["openai"] %}
             <option value="{{ item.id }}" {% if smod == item.id %}selected{% endif %}>{{ item.label }}</option>
           {% endfor %}
         </select>
       </label>
-      <label>Spotter reasoning
-        <select name="spotter_reasoning_effort">
-          {% for effort in ["none", "low", "medium", "high", "xhigh", "max"] %}
-            <option value="{{ effort }}" {% if current_settings.spotter_reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
+      <label>Spotter model — Anthropic
+        <select name="spotter_anthropic_model">
+          <option value="" {% if not current_settings.spotter_anthropic_model %}selected{% endif %}>Same as General model</option>
+          {% for item in model_options["anthropic"] %}
+            <option value="{{ item.id }}" {% if current_settings.spotter_anthropic_model == item.id %}selected{% endif %}>{{ item.label }}</option>
           {% endfor %}
         </select>
       </label>
     </div>
-    <p class="muted">Live facilitation favors speed: Spotter can use a faster model and lower reasoning than GRIND's deep synthesis. The model override applies when OpenAI is the provider; the reasoning level applies to every provider that supports one.</p>
+    <label>Spotter reasoning
+      <select name="spotter_reasoning_effort">
+        {% for effort in ["none", "low", "medium", "high", "xhigh", "max"] %}
+          <option value="{{ effort }}" {% if current_settings.spotter_reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="muted">Live facilitation favors speed: Spotter can run a faster model and lower reasoning than GRIND's deep synthesis (e.g. Claude Haiku for Spotter, Sonnet for GRIND). Whichever provider is active uses its own override; reasoning applies to every provider that supports one. LM Studio and OpenRouter run their single configured model.</p>
     <label>System prompt / agent persona
       <textarea name="spotter_persona" rows="9">{{ current_settings.spotter_persona }}</textarea>
     </label>

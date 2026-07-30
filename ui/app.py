@@ -116,6 +116,7 @@ DEFAULT_SETTINGS = {
     "provider": "openai",
     "model": "gpt-5.6",
     "spotter_model": "",
+    "spotter_anthropic_model": "",
     "spotter_reasoning_effort": "low",
     "reasoning_effort": "medium",
     "api_keys": {"openai": "", "anthropic": "", "openrouter": "", "elevenlabs": ""},
@@ -349,6 +350,8 @@ def _load_settings() -> dict:
     valid_anthropic = {m["id"] for m in ANTHROPIC_MODEL_OPTIONS}
     if settings.get("anthropic_model") not in valid_anthropic:
         settings["anthropic_model"] = "claude-sonnet-5"
+    if settings.get("spotter_anthropic_model") not in valid_anthropic:
+        settings["spotter_anthropic_model"] = ""
     settings["openrouter_model"] = str(settings.get("openrouter_model") or "").strip() or DEFAULT_SETTINGS["openrouter_model"]
     settings["lmstudio_base_url"] = str(settings.get("lmstudio_base_url") or "").strip() or DEFAULT_SETTINGS["lmstudio_base_url"]
     settings["lmstudio_model"] = str(settings.get("lmstudio_model") or "").strip()
@@ -709,16 +712,22 @@ def _elevenlabs_tts(text: str, api_key: str, voice_id: str, model_id: str) -> by
 def _feature_settings(settings: dict, feature: str) -> dict:
     """Return settings with a feature-specific model and effort override.
 
-    Feature model overrides (e.g. a lower-latency Spotter model) apply to the
-    OpenAI provider; other providers use their own configured model.
+    A feature (e.g. Spotter) can run a faster model than GRIND: the OpenAI
+    override uses {feature}_model, the Anthropic override uses
+    {feature}_anthropic_model. The reasoning override applies to every
+    provider that supports one.
     """
+    provider = settings.get("provider", "openai")
     model = str(settings.get(f"{feature}_model") or "").strip()
+    anthropic_model = str(settings.get(f"{feature}_anthropic_model") or "").strip()
     reasoning_effort = str(settings.get(f"{feature}_reasoning_effort") or "").strip()
-    if not model and not reasoning_effort:
+    if not model and not anthropic_model and not reasoning_effort:
         return settings
     eff = dict(settings)
-    if model and settings.get("provider", "openai") == "openai":
+    if model and provider == "openai":
         eff["model"] = model
+    if anthropic_model and provider == "anthropic":
+        eff["anthropic_model"] = anthropic_model
     if reasoning_effort:
         eff["reasoning_effort"] = reasoning_effort
     return eff
@@ -3552,6 +3561,8 @@ async def save_settings(request: Request):
     settings["lmstudio_model"] = str(form.get("lmstudio_model", settings.get("lmstudio_model", ""))).strip()
     spotter_model = str(form.get("spotter_model", settings.get("spotter_model", ""))).strip()
     settings["spotter_model"] = spotter_model if spotter_model in valid_models else ""
+    spotter_anthropic = str(form.get("spotter_anthropic_model", settings.get("spotter_anthropic_model", ""))).strip()
+    settings["spotter_anthropic_model"] = spotter_anthropic if spotter_anthropic in valid_anthropic else ""
     reasoning_efforts = {"none", "low", "medium", "high", "xhigh", "max"}
     for key, fallback in (
         ("reasoning_effort", "medium"),
