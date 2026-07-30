@@ -247,6 +247,15 @@ function nodeVisible(node) {
   if (node.is_signal && !showSignals) return false;
   return activeTypes.size === 0 || activeTypes.has(node.entry_type);
 }
+// Obsidian-style sizing: small dots scaled by connectivity; signals smaller.
+function nodeRadius2d(node) {
+  if (node.is_signal) return 4;
+  return Math.min(14, 7 + Number(node.value || 1) * 1.6);
+}
+function nodeRadius3d(node) {
+  if (node.is_signal) return 6;
+  return Math.max(10, Math.min(28, 11 + Number(node.value || 1) * 2.2));
+}
 let view = { x: 0, y: 0, scale: 1 };
 let dragNode = null;
 let pan2d = { active: false, x: 0, y: 0, viewX: 0, viewY: 0, moved: false };
@@ -353,12 +362,7 @@ function setMapMode(nextMode) {
   document.getElementById("view2d").classList.toggle("active", !is3d);
 }
 
-function tick() {
-  if (!paused && physics) {
-    if (grinding && orbitAuto && mode === "3d") {
-      orbit.yaw += 0.0024;
-      orbit.pitch = 0.36 + Math.sin(performance.now() / 1800) * 0.08;
-    }
+function physicsStep() {
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i], b = nodes[j];
@@ -403,6 +407,19 @@ function tick() {
       node.y = Math.max(72, Math.min(height - 72, node.y + node.vy));
       node.z = Math.max(-320, Math.min(320, node.z + node.vz));
     }
+}
+
+// Settle the layout before the first paint so the map appears calm
+// instead of visibly bouncing into place.
+for (let warm = 0; warm < 160; warm++) physicsStep();
+
+function tick() {
+  if (!paused && physics) {
+    if (grinding && orbitAuto && mode === "3d") {
+      orbit.yaw += 0.0024;
+      orbit.pitch = 0.36 + Math.sin(performance.now() / 1800) * 0.08;
+    }
+    physicsStep();
   }
   updateGrindInfo();
   render2d();
@@ -419,7 +436,7 @@ function render2d() {
   ));
   const visibleNodes = nodes.filter(nodeVisible);
   visibleNodes.forEach((node) => {
-    const radius = Math.min(30, 14 + Number(node.value || 1) * 2);
+    const radius = nodeRadius2d(node);
     occupied.push({ left: node.x - radius, right: node.x + radius, top: node.y - radius, bottom: node.y + radius });
   });
   const nodeLabels = new Map();
@@ -427,7 +444,7 @@ function render2d() {
     [...visibleNodes]
       .sort((a, b) => Number(b.value || 1) - Number(a.value || 1))
       .forEach((node) => {
-        const radius = Math.min(30, 14 + Number(node.value || 1) * 2);
+        const radius = nodeRadius2d(node);
         const text = shortLabel(node.title_full);
         const labelWidth = Math.max(42, text.length * 6.2);
         const y = node.y - radius - 9;
@@ -458,14 +475,13 @@ function render2d() {
   }).join("");
   const nodeMarkup = nodes.map((node) => {
     if (!nodeVisible(node)) return "";
-    const radius = Math.min(30, 14 + Number(node.value || 1) * 2);
+    const radius = nodeRadius2d(node);
     const themes = showThemes && node.themes ? `<text class="node-themes" x="${node.x}" y="${node.y + radius + 22}">${esc(node.themes.slice(0, 2).join(" / "))}</text>` : "";
     const labelInfo = nodeLabels.get(node.id);
     const label = labelInfo ? `<text class="node-label" x="${node.x}" y="${labelInfo.y}">${esc(labelInfo.text)}</text>` : "";
     return `<g class="map-node" data-id="${esc(node.id)}">
       ${label}
       <circle cx="${node.x}" cy="${node.y}" r="${radius}" fill="${node.color}"></circle>
-      <text class="node-type" x="${node.x}" y="${node.y + 4}" fill="${nodeTextColor(node.color)}">${esc(compactNodeType(node.type_label))}</text>
       ${themes}
     </g>`;
   }).join("");
@@ -1035,7 +1051,7 @@ function render3d() {
     if (!nodeVisible(node)) continue;
     const sp = projectGL(node, matrix, size);
     if (!sp) continue;
-    const worldR = Math.max(10, Math.min(28, 11 + Number(node.value || 1) * 2.2));
+    const worldR = nodeRadius3d(node);
     const screenR = Math.max(9, worldR * focal * 0.5 * size.h / sp.w);
     hitNodes.push({ node, p: { x: sp.x, y: sp.y }, r: screenR, w: sp.w });
   }
@@ -1074,7 +1090,7 @@ function render3d() {
     if (!nodeVisible(node)) continue;
     const pos = nodePosition(node);
     const color = hexToRgb(node.color);
-    const radius = Math.max(10, Math.min(28, 11 + Number(node.value || 1) * 2.2));
+    const radius = nodeRadius3d(node);
     pushSphere(sphereData, pos, node.id === hoverNodeId ? radius * 1.14 : radius, color, node.id === hoverNodeId ? 1 : 0);
   }
   gl.useProgram(state.sphereProgram);
