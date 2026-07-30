@@ -97,16 +97,16 @@ contradicts | harborlight-service-access-2026/2026-07-15-hl-shadow-resource-list
 
   <section class="capture-builder">
     <div>
-      <p class="quick-type">Quick capture: each button inserts a signal bullet like <code>Pain:</code> or <code>Question:</code>. Typing works too — start a line with <code>Pain:</code> or the compact <code>#P:</code> marker, with or without a dash; both are detected.</p>
+      <p class="quick-type">Quick capture: each button inserts a signal marker — <code>#P:</code> pain, <code>#O:</code> observation, <code>#A:</code> action, <code>#Q:</code> question, <code>#S:</code> solution, <code>#R:</code> recommendation, <code>#I:</code> insight. Type them anywhere at the start of a line; no dash needed.</p>
     </div>
     <div class="block-buttons">
-      <button class="block-button block-pain" draggable="true" type="button" data-type="pain" data-code="Pain: " data-insert="- Pain: "><span>#P</span>Pain</button>
-      <button class="block-button block-observation" draggable="true" type="button" data-type="observation" data-code="Observation: " data-insert="- Observation: "><span>#O</span>Observation</button>
-      <button class="block-button block-action" draggable="true" type="button" data-type="action" data-code="Action: " data-insert="- Action: "><span>#A</span>Action Item</button>
-      <button class="block-button block-question" draggable="true" type="button" data-type="question" data-code="Question: " data-insert="- Question: "><span>#Q</span>Question</button>
-      <button class="block-button block-solution" draggable="true" type="button" data-type="solution" data-code="Solution: " data-insert="- Solution: "><span>#S</span>Solution</button>
-      <button class="block-button block-recommendation" draggable="true" type="button" data-type="recommendation" data-code="Recommendation: " data-insert="- Recommendation: "><span>#R</span>Recommendation</button>
-      <button class="block-button block-insight" draggable="true" type="button" data-type="insight" data-code="Insight: " data-insert="- Insight: "><span>#I</span>Insight</button>
+      <button class="block-button block-pain" draggable="true" type="button" data-type="pain" data-code="#P: " data-insert="#P: "><span>#P</span>Pain</button>
+      <button class="block-button block-observation" draggable="true" type="button" data-type="observation" data-code="#O: " data-insert="#O: "><span>#O</span>Observation</button>
+      <button class="block-button block-action" draggable="true" type="button" data-type="action" data-code="#A: " data-insert="#A: "><span>#A</span>Action Item</button>
+      <button class="block-button block-question" draggable="true" type="button" data-type="question" data-code="#Q: " data-insert="#Q: "><span>#Q</span>Question</button>
+      <button class="block-button block-solution" draggable="true" type="button" data-type="solution" data-code="#S: " data-insert="#S: "><span>#S</span>Solution</button>
+      <button class="block-button block-recommendation" draggable="true" type="button" data-type="recommendation" data-code="#R: " data-insert="#R: "><span>#R</span>Recommendation</button>
+      <button class="block-button block-insight" draggable="true" type="button" data-type="insight" data-code="#I: " data-insert="#I: "><span>#I</span>Insight</button>
     </div>
   </section>
 
@@ -143,12 +143,12 @@ contradicts | harborlight-service-access-2026/2026-07-15-hl-shadow-resource-list
 
 ## Meeting notes
 
-- Observation: what you observed
-- Pain: a friction point
-- Question: an open question
-- Action: a follow-up to own
+#O: what you observed
+#P: a pain point
+#Q: an open question
+#A: an action to follow up
 
-Just start typing — the quick-capture buttons above insert signal bullets wherever your cursor is. Compact #P: / #O: markers work too, with or without the dash.">{{ body }}</textarea></label>
+Just start typing — the quick-capture buttons above insert markers wherever your cursor is. No dash needed.">{{ body }}</textarea></label>
   <div id="statusLine" class="muted"></div>
   <button class="button primary" type="submit"><img class="button-icon" src="/static/icons/save.svg" alt="">Save Memory Object</button>
 </form>

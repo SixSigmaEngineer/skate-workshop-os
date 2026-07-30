@@ -43,13 +43,17 @@ class CaptureSignalSyntaxTests(unittest.TestCase):
             """
         )
         (self.root / "conversations" / "demo" / "2026-07-25-syntax-test.md").write_text(note, encoding="utf-8")
-        self.originals = (skate_lib.SKATE_ROOT, skate_lib.CONVERSATIONS, skate_lib.SESSIONS)
+        self.originals = (
+            skate_lib.SKATE_ROOT, skate_lib.CONVERSATIONS, skate_lib.SESSIONS,
+            skate_app.CONVERSATIONS, skate_app.SESSIONS,
+        )
         skate_lib.SKATE_ROOT = self.root
-        skate_lib.CONVERSATIONS = self.root / "conversations"
-        skate_lib.SESSIONS = self.root / "sessions"
+        skate_lib.CONVERSATIONS = skate_app.CONVERSATIONS = self.root / "conversations"
+        skate_lib.SESSIONS = skate_app.SESSIONS = self.root / "sessions"
 
     def tearDown(self):
-        skate_lib.SKATE_ROOT, skate_lib.CONVERSATIONS, skate_lib.SESSIONS = self.originals
+        (skate_lib.SKATE_ROOT, skate_lib.CONVERSATIONS, skate_lib.SESSIONS,
+         skate_app.CONVERSATIONS, skate_app.SESSIONS) = self.originals
         self.temp.cleanup()
 
     def test_all_four_pain_forms_are_detected(self):
@@ -70,6 +74,16 @@ class CaptureSignalSyntaxTests(unittest.TestCase):
         out = skate_app._decorate_capture_markers(html)
         self.assertEqual(out.count("capture-marker-p"), 2)
         self.assertIn('capture-marker-r" title="Recommendation">Recommendation:</span>', out)
+
+    def test_dashless_markers_render_as_separate_colored_lines(self):
+        from fastapi.testclient import TestClient
+
+        client = TestClient(skate_app.app)
+        response = client.get("/entry/demo/2026-07-25-syntax-test.md")
+        self.assertEqual(response.status_code, 200)
+        # Both hash pains (dashed and bare) must appear as decorated lines,
+        # not merged into one paragraph.
+        self.assertGreaterEqual(response.text.count("capture-line-p"), 2)
 
 
 if __name__ == "__main__":

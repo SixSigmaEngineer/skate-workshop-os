@@ -1988,15 +1988,15 @@ def _write_entry(
 
 def _default_note_body(title: str, summary: str = "") -> str:
     first_observation = summary.strip()
-    observation_line = f"- Observation: {first_observation}" if first_observation else "- Observation: "
+    observation_line = f"#O: {first_observation}" if first_observation else "#O: "
     return f"""# {title}
 
 ## Meeting notes
 
 {observation_line}
-- Pain:
-- Question:
-- Action:
+#P:
+#Q:
+#A:
 
 """
 
@@ -2446,10 +2446,13 @@ def view_entry(request: Request, file_id: str):
     if entry is None:
         return HTMLResponse("Entry not found", status_code=404)
     MD.reset()
-    # Python Markdown treats ``#P:`` after a list marker as an ATX heading.
-    # Escape SKATE's capture markers only for rendering; the markdown source
-    # remains portable and human-readable as ``- #P: ...``.
-    render_body = re.sub(r"(?m)^(\s*-\s+)#([POAQRSI]):", r"\1\\#\2:", entry.body)
+    # Rendering-only transforms; the markdown source stays exactly as typed.
+    # 1. Dashless marker lines (``#P: ...``) become list items so each signal
+    #    renders on its own colored line instead of merging into a paragraph.
+    render_body = re.sub(r"(?m)^(\s*)#([POAQRSI]):", r"\1- #\2:", entry.body)
+    # 2. Python Markdown treats ``#P:`` after a list marker as an ATX heading;
+    #    escape the marker so it survives conversion.
+    render_body = re.sub(r"(?m)^(\s*-\s+)#([POAQRSI]):", r"\1\\#\2:", render_body)
     body_html = _decorate_capture_markers(MD.convert(render_body))
     embedded_actions = _embedded_actions(entry) if entry.entry_type != "action" else []
     promoted_sources = {candidate.captured_from for candidate in load_all_entries() if candidate.captured_from}
