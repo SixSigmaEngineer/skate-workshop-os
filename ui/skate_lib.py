@@ -1177,6 +1177,63 @@ def graph_data(entries: list[Entry]) -> dict:
             theme_degree[second.file_id] += 1
 
     nodes = list(nodes_by_id.values())
+    stats = {
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "theme_edges": sum(1 for edge in edges if edge["type"] == "similar_to"),
+        "relationship_edges": sum(1 for edge in edges if edge["type"] != "similar_to"),
+    }
+
+    # Signal bubbles: the typed moments captured INSIDE notes (#P pain,
+    # #Q question, #O observation, ...) become small satellite nodes around
+    # their parent note. Most captured knowledge lives in these signals, so
+    # without them a vault of plain meeting notes would render as a
+    # monochrome map. Excluded from the headline stats above.
+    signal_count = 0
+    for entry in entries:
+        markers = capture_markers(entry)
+        for marker_type, texts in markers.items():
+            # A dedicated note of the same type already IS that signal;
+            # don't duplicate it as a satellite of itself.
+            if entry.entry_type == marker_type:
+                continue
+            for index, text in enumerate(texts):
+                text = str(text).strip()
+                if not text:
+                    continue
+                meta = ENTRY_TYPES.get(marker_type, ENTRY_TYPES["note"])
+                signal_id = f"{entry.file_id}::signal-{marker_type}-{index}"
+                nodes.append(
+                    {
+                        "id": signal_id,
+                        "label": text if len(text) <= 34 else text[:31] + "...",
+                        "title_full": text,
+                        "entry_type": marker_type,
+                        "type_label": meta["label"],
+                        "type_color": meta["color"],
+                        "session": entry.session_key,
+                        "session_label": entry.session_display,
+                        "themes": [],
+                        "date": entry.date,
+                        "color": meta["color"],
+                        "url": f"/entry/{entry.file_id}",
+                        "value": 0,
+                        "is_signal": True,
+                        "parent": entry.file_id,
+                    }
+                )
+                edges.append(
+                    {
+                        "from": entry.file_id,
+                        "to": signal_id,
+                        "type": "contains",
+                        "label": meta["label"],
+                        "dashes": False,
+                    }
+                )
+                signal_count += 1
+    stats["signal_count"] = signal_count
+
     present_types = sorted({node["entry_type"] for node in nodes if node["entry_type"]})
     legend = [
         {
@@ -1191,10 +1248,5 @@ def graph_data(entries: list[Entry]) -> dict:
         "nodes": nodes,
         "edges": edges,
         "legend": legend,
-        "stats": {
-            "node_count": len(nodes),
-            "edge_count": len(edges),
-            "theme_edges": sum(1 for edge in edges if edge["type"] == "similar_to"),
-            "relationship_edges": sum(1 for edge in edges if edge["type"] != "similar_to"),
-        },
+        "stats": stats,
     }

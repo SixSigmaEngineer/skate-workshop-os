@@ -92,6 +92,7 @@
   <div class="stat-tip" title="All connections drawn on the map — evidence links plus theme links."><strong>{{ stats.edge_count }}</strong><span>Graph links</span></div>
   <div class="stat-tip" title="Explicit typed relationships between two notes: supports, contradicts, causes, leads_to, or references. Created when you (or Suggest Metadata) link one note to another — this is the trail evidence tracing follows."><strong>{{ stats.relationship_edges | default(0) }}</strong><span>Evidence links</span></div>
   <div class="stat-tip" title="Automatic connections between notes that share a theme (e.g. two notes both tagged 'Client Experience'). Nobody links these by hand — shared vocabulary clusters related notes on its own."><strong>{{ stats.theme_edges | default(0) }}</strong><span>Theme links</span></div>
+  <div class="stat-tip" title="Typed moments captured inside notes with #P, #O, #Q, #A, #S, #R, #I markers. Each appears as a small colored satellite around its parent note — this is where most captured knowledge lives."><strong>{{ stats.signal_count | default(0) }}</strong><span>Signals</span></div>
 </section>
 
 <section class="grind-workspace">
@@ -108,6 +109,7 @@
       <button class="button" type="button" id="zoomInMap" title="Zoom farther in">Zoom +</button>
       <label class="chk"><input type="checkbox" id="toggleRelated" checked> Related rails</label>
       <label class="chk"><input type="checkbox" id="toggleThemeRails" checked> Theme rails</label>
+      <label class="chk"><input type="checkbox" id="toggleSignals" checked> Signals</label>
       <label class="chk"><input type="checkbox" id="togglePhysics" checked> Physics</label>
       <label class="chk"><input type="checkbox" id="toggleLabels" checked> Labels</label>
       <span class="muted" id="mapStatus">{% if filters.session %}Ready to grind this session.{% else %}Choose a session for focused IDEO synthesis; the map can still be explored now.{% endif %}</span>
@@ -238,9 +240,12 @@ let paused = false;
 let physics = true;
 let showRelatedRails = true;
 let showThemeRails = true;
+let showSignals = true;
 let activeTypes = new Set();
 function nodeVisible(node) {
-  return activeTypes.size === 0 || (node && activeTypes.has(node.entry_type));
+  if (!node) return false;
+  if (node.is_signal && !showSignals) return false;
+  return activeTypes.size === 0 || activeTypes.has(node.entry_type);
 }
 let view = { x: 0, y: 0, scale: 1 };
 let dragNode = null;
@@ -316,6 +321,7 @@ function edgeColor(edge) {
   return "#c8806e";                               // related rails — coral
 }
 function railVisible(edge) {
+  if (edge.type === "contains") return showSignals;
   return edge.shared ? showThemeRails : showRelatedRails;
 }
 
@@ -362,7 +368,7 @@ function tick() {
       const dx = b.x - a.x, dy = b.y - a.y;
       const dz = b.z - a.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-      const target = edge.type === "similar_to" ? 150 : 115;
+      const target = edge.type === "contains" ? 55 : (edge.type === "similar_to" ? 150 : 115);
       const force = (dist - target) * 0.008;
       a.vx += (dx / dist) * force;
       a.vy += (dy / dist) * force;
@@ -1360,6 +1366,7 @@ document.getElementById("zoomInMap").addEventListener("click", () => {
 document.getElementById("togglePhysics").addEventListener("change", (event) => { physics = event.target.checked; });
 document.getElementById("toggleRelated").addEventListener("change", (event) => { showRelatedRails = event.target.checked; });
 document.getElementById("toggleThemeRails").addEventListener("change", (event) => { showThemeRails = event.target.checked; });
+document.getElementById("toggleSignals").addEventListener("change", (event) => { showSignals = event.target.checked; });
 document.getElementById("startGrind").addEventListener("click", () => {
   const currentSession = new FormData(grindFilters).get("session") || "";
   if (!currentSession) {
