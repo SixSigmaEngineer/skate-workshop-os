@@ -1132,18 +1132,22 @@ Markdown note:
 
 
 def _compression_prompt(title: str, tags: str, body: str) -> str:
-    return f"""Compress this SKATE markdown note into a consulting memory block.
+    return f"""Clean and compress this raw SKATE workshop note into organized consulting memory.
 
-This is not a transcript summary. Preserve high-signal observations, evidence, themes, decisions, risks, and next actions. The output should help a consultant retrieve the note later and understand why it matters in a workshop or transformation engagement.
+The note may be dirty: shorthand, fragments, typos, half-finished bullets, and stream-of-consciousness capture. Rewrite it clean and concise while preserving meaning, names, commitments, and uncertainty. Do not invent anything that is not in the note.
+
+Then organize the substance into SKATE's typed signals so each one appears in the knowledge graph. Every distinct action item belongs in "actions", every friction point in "pain_points", and so on — split combined thoughts into separate signals.
 
 Return only JSON with:
 {{
   "gist": "one sentence",
   "consulting_context": "the main consulting context for this note",
-  "key_points": ["3 to 6 bullets"],
-  "pain_points": ["0 to 5 bullets"],
-  "actions": ["0 to 5 bullets"],
-  "questions": ["0 to 5 bullets"],
+  "key_points": ["3 to 6 cleaned bullets of context worth keeping as prose"],
+  "observations": ["0 to 6 things observed - direct evidence or notable statements"],
+  "pain_points": ["0 to 6 friction points"],
+  "actions": ["0 to 6 action items, each a single concrete follow-up"],
+  "questions": ["0 to 6 open questions"],
+  "insights": ["0 to 4 interpretations or patterns grounded in the note"],
   "agent_memory": "compact paragraph under 120 words written as reusable long-term memory"
 }}
 
@@ -1156,28 +1160,27 @@ Markdown note:
 
 
 def _local_note_compression(title: str, tags: str, body: str) -> dict:
-    lines = [line.strip() for line in body.splitlines() if line.strip()]
-    plain_lines = [
-        re.sub(r"^#+\s*", "", line)
-        for line in lines
-        if not line.startswith("---") and not line.startswith("```")
+    lines = [
+        line.strip()
+        for line in body.splitlines()
+        if line.strip() and not line.strip().startswith("---") and not line.strip().startswith("```")
     ]
-    markers = {
+    markers: dict[str, list[str]] = {
+        "observations": [],
         "pain_points": [],
         "actions": [],
         "questions": [],
+        "insights": [],
     }
-    for line in plain_lines:
-        match = re.match(r"^#([PAQ]):\s*(.+)$", line, flags=re.I)
-        if not match:
+    marker_keys = {"O": "observations", "P": "pain_points", "A": "actions", "Q": "questions", "I": "insights"}
+    signal_pattern = re.compile(r"^\s*(?:[-*]\s+)?\\?#([OPAQI]):\s*(.+)$", flags=re.I)
+    plain_lines = []
+    for line in lines:
+        match = signal_pattern.match(line)
+        if match:
+            markers[marker_keys[match.group(1).upper()]].append(match.group(2).strip())
             continue
-        code, text = match.group(1).upper(), match.group(2).strip()
-        if code == "P":
-            markers["pain_points"].append(text)
-        elif code == "A":
-            markers["actions"].append(text)
-        elif code == "Q":
-            markers["questions"].append(text)
+        plain_lines.append(re.sub(r"^#+\s*", "", line))
 
     gist_source = next((line for line in plain_lines if line and not line.startswith("#")), title)
     key_points = []
@@ -1193,9 +1196,11 @@ def _local_note_compression(title: str, tags: str, body: str) -> dict:
         "gist": _plain_text_excerpt(gist_source or title, 180),
         "consulting_context": f"Tags {tags or 'none'} provide retrieval rails for this note.",
         "key_points": key_points[:6],
-        "pain_points": markers["pain_points"][:5],
-        "actions": markers["actions"][:5],
-        "questions": markers["questions"][:5],
+        "observations": markers["observations"][:6],
+        "pain_points": markers["pain_points"][:6],
+        "actions": markers["actions"][:6],
+        "questions": markers["questions"][:6],
+        "insights": markers["insights"][:4],
         "agent_memory": agent_memory,
         "mode": "local",
     }
@@ -1227,9 +1232,11 @@ def _normalize_compression(raw: dict, fallback: dict) -> dict:
         "gist": str(raw.get("gist", "")).strip() or fallback["gist"],
         "consulting_context": str(raw.get("consulting_context", "")).strip() or fallback["consulting_context"],
         "key_points": list_of_strings("key_points", 6),
-        "pain_points": list_of_strings("pain_points", 5),
-        "actions": list_of_strings("actions", 5),
-        "questions": list_of_strings("questions", 5),
+        "observations": list_of_strings("observations", 6),
+        "pain_points": list_of_strings("pain_points", 6),
+        "actions": list_of_strings("actions", 6),
+        "questions": list_of_strings("questions", 6),
+        "insights": list_of_strings("insights", 4),
         "agent_memory": str(raw.get("agent_memory", "")).strip() or fallback["agent_memory"],
         "mode": "ai",
     }
@@ -1237,33 +1244,34 @@ def _normalize_compression(raw: dict, fallback: dict) -> dict:
 
 def _compression_markdown(compression: dict) -> str:
     def bullets(items: list[str]) -> str:
-        if not items:
-            return "- None captured"
         return "\n".join(f"- {item}" for item in items)
 
-    return f"""## Consultant Memory Compression
+    def signals(code: str, items: list[str]) -> str:
+        return "\n".join(f"#{code}: {item}" for item in items)
 
-**Gist:** {compression["gist"]}
-
-**Consulting context:** {compression["consulting_context"]}
-
-**Compression purpose:** Reusable consultant memory organized around themes, evidence, and next-action value.
-
-**Key points**
-{bullets(compression["key_points"])}
-
-**Pain points**
-{bullets(compression["pain_points"])}
-
-**Actions**
-{bullets(compression["actions"])}
-
-**Questions**
-{bullets(compression["questions"])}
-
-**Agent memory**
-{compression["agent_memory"]}
-"""
+    sections = [
+        "## Cleaned Notes",
+        f"**Gist:** {compression['gist']}",
+        f"**Context:** {compression['consulting_context']}",
+    ]
+    if compression.get("key_points"):
+        sections.append("**Key points**\n" + bullets(compression["key_points"]))
+    signal_lines = "\n".join(
+        part
+        for part in (
+            signals("O", compression.get("observations", [])),
+            signals("P", compression.get("pain_points", [])),
+            signals("Q", compression.get("questions", [])),
+            signals("I", compression.get("insights", [])),
+            signals("A", compression.get("actions", [])),
+        )
+        if part
+    )
+    if signal_lines:
+        sections.append("**Signals**\n" + signal_lines)
+    if compression.get("agent_memory"):
+        sections.append("**Agent memory**\n" + compression["agent_memory"])
+    return "\n\n".join(sections) + "\n"
 
 
 def _transcript_summary_prompt(title: str, transcript: str) -> str:

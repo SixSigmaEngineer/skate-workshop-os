@@ -7,7 +7,7 @@
     <p class="muted">Write the note. SKATE can classify it and you can drop structured design-thinking blocks into the markdown.</p>
   </div>
   <div class="toolbar">
-    <button class="button" type="button" id="compressBtn"><img class="button-icon" src="/static/icons/wand.svg" alt="">Compress Note</button>
+    <button class="button" type="button" id="compressBtn"><img class="button-icon" src="/static/icons/wand.svg" alt="">Clean/Compress Notes</button>
     <button class="button" type="button" id="suggestBtn"><img class="button-icon" src="/static/icons/wand.svg" alt="">Suggest Metadata</button>
   </div>
 </section>
@@ -274,20 +274,42 @@ document.getElementById("suggestBtn").addEventListener("click", async () => {
   statusLine.textContent = data.message || s.reasoning || "Metadata suggested.";
 });
 document.getElementById("compressBtn").addEventListener("click", async () => {
-  statusLine.textContent = "Compressing note...";
-  const res = await fetch("/api/compress-note", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      title: document.querySelector("[name=title]").value,
-      tags: document.getElementById("tags").value,
-      body: body.value
-    })
-  });
-  const data = await res.json();
-  if (!data.ok) { statusLine.textContent = data.error || "Compression failed."; return; }
-  insertIntoBody(data.markdown || "");
-  statusLine.textContent = data.message || "Compression added to note.";
+  const btn = document.getElementById("compressBtn");
+  const originalLabel = btn.innerHTML;
+  btn.disabled = true;
+  statusLine.classList.add("working");
+  let dots = 0;
+  const phases = ["Reading your notes", "Cleaning them up", "Organizing signals (#P, #O, #Q, #A)", "Almost there"];
+  let phase = 0;
+  statusLine.textContent = phases[0] + "...";
+  const pulse = setInterval(() => {
+    dots = (dots + 1) % 4;
+    if (dots === 0 && phase < phases.length - 1) phase += 1;
+    statusLine.textContent = phases[phase] + ".".repeat(dots + 1);
+  }, 700);
+  btn.innerHTML = '<img class="button-icon" src="/static/icons/wand.svg" alt="">Working&hellip;';
+  try {
+    const res = await fetch("/api/compress-note", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        title: document.querySelector("[name=title]").value,
+        tags: document.getElementById("tags").value,
+        body: body.value
+      })
+    });
+    const data = await res.json();
+    if (!data.ok) { statusLine.textContent = data.error || "Cleaning failed."; return; }
+    insertIntoBody(data.markdown || "");
+    statusLine.textContent = data.message || "Cleaned notes added — signals will appear in the mind map.";
+  } catch (err) {
+    statusLine.textContent = "Cleaning failed: " + err;
+  } finally {
+    clearInterval(pulse);
+    statusLine.classList.remove("working");
+    btn.disabled = false;
+    btn.innerHTML = originalLabel;
+  }
 });
 let pendingTranscriptionFile = null;
 let transcriptionEngineReady = false;

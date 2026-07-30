@@ -1486,3 +1486,7 @@ body { background: #fff; color: var(--ink); }
 .grind-stats div { padding: 10px 14px; }
 .grind-stats strong { font-size: 22px; }
 .grind-stats span { font-size: 12px; }
+
+/* ─── AI status line: pulse while working ──────────────────────── */
+#statusLine.working { color: #2f67a5; font-weight: 600; animation: skatePulse 1.4s ease-in-out infinite; }
+@keyframes skatePulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
