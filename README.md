@@ -16,7 +16,7 @@
   <img alt="Local-first Markdown" src="https://img.shields.io/badge/memory-local--first%20Markdown-315A8C">
   <img alt="AI reasoning" src="https://img.shields.io/badge/AI-evidence--linked%20synthesis-10A37F">
   <img alt="MCP server" src="https://img.shields.io/badge/agents-MCP%20server-6E56CF">
-  <img alt="Python 3.10 through 3.13" src="https://img.shields.io/badge/Python-3.10--3.13-3776AB">
+  <img alt="Python auto-bootstrapped" src="https://img.shields.io/badge/Python-auto--bootstrapped-3776AB">
   <img alt="Windows" src="https://img.shields.io/badge/platform-Windows-0078D6">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
@@ -40,7 +40,7 @@
 |---|---|
 | **Event** | [Orion Global Hackathon 2026](https://orionhackathon.devpost.com/) — Where Operations Research Meets Innovation |
 | **Category** | **Productivity & Enterprise Solutions** |
-| **Release** | v1.0 — first public release of SKATE |
+| **Release** | v1.1 — adds the app-agnostic meeting recorder, note attachments, bounded AI payloads, and a reproducible benchmark harness |
 
 ---
 
@@ -70,7 +70,7 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 
 - **Structured capture** — free-form notes carry compact typed signals (`#O` observation, `#P` pain, `#Q` question, `#A` action) so qualitative data enters the system already classified.
 - **Governed evidence** — every memory object has YAML metadata, active/inactive status, themes, provenance, and typed relationships (`supports`, `contradicts`, `causes`, `leads_to`, `references`). Analysis runs only on governed, in-scope evidence.
-- **Bounded retrieval instead of brute force** — weighted lexical scoring plus optional local semantic embeddings return a small, ranked Top-K evidence set instead of an entire transcript. On the committed demo vault, the query `families repeat their story` scoped to a 13-note session with `top_k=3` returned an estimated 378 tokens of evidence versus approximately 2,412 tokens for the eligible session notes — an estimated 84.4% context reduction for that query (deterministic lexical-mode estimate, not a universal claim).
+- **Bounded retrieval instead of brute force** — weighted lexical scoring plus optional local semantic embeddings return a small, ranked Top-K evidence set instead of an entire transcript. Every retrieval number ships with its configuration and a chance baseline, and reproduces from a harness in the repo — see [Measured, not claimed](#measured-not-claimed).
 - **Traceable synthesis** — every generated pain point, How-Might-We prompt, and solution starter links back to its source notes, so decisions keep their evidence chain.
 - **Prioritized output** — the full ranked synthesis exports to Excel for a workshop readout or an improvement backlog.
 
@@ -91,6 +91,11 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 | Agent access to The Lineup via MCP (`get_lineup`) | Working |
 | One-click MCP setup for both Codex/ChatGPT desktop and Claude Desktop (classic and Microsoft Store installs) | Working |
 | Windows installer with bundled MCP executable | Working |
+| App-agnostic meeting recorder — records what the PC hears (Teams, Zoom, Meet, Webex, anything), no bot in the call, local transcription | Working |
+| Paste (Ctrl+V) or drag screenshots and files into notes, stored in the session folder with a visual gallery | Working |
+| Bounded AI synthesis payload with relevance-based selection over long notes and transcripts | Working |
+| Reproducible retrieval benchmark with analytic chance baselines (`tools/benchmark_retrieval.py`) | Working |
+| Self-bootstrapping launcher: finds a compatible Python or installs one privately, no admin rights | Working |
 
 ## Six core capabilities
 
@@ -115,6 +120,21 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 | Loses follow-through in meeting notes | Surfaces captured actions in The Lineup and preserves their source-note link |
 
 Obsidian is an excellent personal knowledge workspace. SKATE addresses a different job: helping facilitators and improvement teams convert a live, multi-person workshop into governed, reusable evidence and then deliberately synthesize that evidence into improvement opportunities.
+
+## Not another meeting notetaker
+
+The other category SKATE gets compared to is the meeting notetaker — Granola, Otter, Fireflies, Spinach. Fine products for personal use, but they record meetings; SKATE remembers engagements. The differences are structural, and they matter most in exactly the rooms where enterprise productivity tools get used — client engagements, HR conversations, legal and strategy sessions:
+
+| | SKATE | The notetaker category |
+|---|---|---|
+| **How it captures** | Records what the PC hears — any meeting app, no bot joining the call | A visible bot joins the call, or capture routes through the vendor |
+| **Calendar and tenant access** | None requested, ever | A Google/Microsoft calendar connection is commonly required for auto-join |
+| **Where your audio goes** | Never leaves the machine — transcription is local | Vendor-cloud transcription and summarization |
+| **Vendor training on your content** | Impossible: there is no vendor | Varies by vendor and plan; some train by default unless you opt out |
+| **What you get back** | Governed, typed, linked memory plus a ranked design-thinking synthesis | A summary and an action list |
+| **Price** | $0 — MIT-licensed, self-hosted | Per-user monthly SaaS |
+
+Even the notetaker with the closest capture model still transcribes every recording in its own cloud. For confidential material, local-only processing is not a preference — it is the difference between a productivity tool and a data-governance decision. SKATE is the only option in the comparison that removes the vendor entirely.
 
 ## Architecture
 
@@ -172,7 +192,7 @@ flowchart LR
     I --> E["Next experiments"]
 ```
 
-GRIND respects note and session governance: inactive notes are retained in the vault but excluded from analysis, and inactive sessions do not appear as GRIND targets. Its outputs stay connected to evidence:
+GRIND reads whole notes, not just their openings — a pain point described three paragraphs into an unmarked note still reaches the synthesis, while explicitly marked signals continue to outrank inferred ones. When a session exceeds its context budget, evidence is selected by relevance rather than truncated: marked lines, keyword-scored paragraphs, and each note's opening and closing survive, with `[...]` marking elisions, and the whole payload stays bounded (~12K tokens) no matter how large the vault grows. GRIND respects note and session governance: inactive notes are retained in the vault but excluded from analysis, and inactive sessions do not appear as GRIND targets. Its outputs stay connected to evidence:
 
 - **Pain Points** describe what is broken or difficult for people, based on repeated signals.
 - **How Might We prompts** open the problem space without prescribing a solution.
@@ -235,6 +255,10 @@ SKATE's Spotter serves the same purpose in a workshop. The facilitator still lea
 
 Spotter helps capture pains, observations, questions, actions, solutions, recommendations, and insights without forcing the facilitator to disengage from the room. Spotter Live can maintain a timestamped transcript with live transcription and speak responses aloud. Local Whisper keeps transcription on the machine, while optional ElevenLabs Scribe Realtime adds speaker diarization such as Speaker 1 and Speaker 2.
 
+### Meeting recorder — any meeting app, no bot, nothing uploaded
+
+Spotter Live also includes a meeting recorder that captures **what the PC hears**: system audio through WASAPI loopback, optionally mixed with the microphone. Teams, Zoom, Meet, Webex — anything that plays sound — with no bot in the participant list and no calendar or tenant connection. Stop the recording and transcription runs entirely on-device via faster-whisper; the transcript lands in the selected session as a governed note. Phone and field recordings drag-and-drop into a session and are transcribed the same local way. Audio never leaves the computer. (Recording-consent rules still apply — that is policy, not software.)
+
 ### Stream Deck Neo control surface
 
 <p align="center">
@@ -251,6 +275,22 @@ The Stream Deck turns facilitation methods into one-press stances: Observe, Find
 
 The custom 3D-printed skateboard-wheel housing holds a conference microphone array at the center of the table. It gives the otherwise invisible agent a memorable, understandable place in the workshop. Build files and the hardware guide are in [`hardware-spotter-mic-puck/`](hardware-spotter-mic-puck/).
 
+## Measured, not claimed
+
+Every performance number in this README reproduces from a harness committed to the repository:
+
+```powershell
+python tools/benchmark_retrieval.py          # retrieval quality, chance baselines, exact CI
+python tools/benchmark_retrieval.py --scale  # payload vs. vault size
+```
+
+- **Retrieval quality.** Over 10 realistic facilitator queries against the committed demo vault (deterministic lexical mode), hit@1 = **0.90** and MRR = **0.95**, versus **0.215** and **0.436** expected under chance — computed analytically from the hypergeometric distribution — for lifts of **4.2×** and **2.2×**. Because n is small, the harness also reports an exact Clopper-Pearson 95% CI on hit@1: [0.555, 0.997].
+- **Bounded payload.** Scaling the vault from 25 to 800 notes (~8.5K to ~273K tokens of raw Markdown), the evidence payload per query stays flat at ~2,257 tokens — over 99% of context avoided at the largest size. The payload is bounded by `top_k`, not by corpus size.
+- **Long-note selection.** On a 140,000-character workshop note, tail-first truncation loses a pain point at the 60% mark, an action item at the 85% mark, and the closing decision; SKATE's relevance selection keeps all three at the same token cost (regression-tested in [`tests/test_synthesis_payload.py`](tests/test_synthesis_payload.py)).
+- **Configuration travels with every number.** An earlier single-query estimate of 84.4% context reduction reproduces exactly at its measured excerpt length (≈505 characters); the current default of 900 yields 79.5% with richer evidence per result. A compression figure without its setting is not a claim anyone can check.
+
+Limitations, stated plainly: n = 10 author-labelled queries (no public benchmark exists for workshop-note retrieval); the scale sweep bounds payload, not ranking quality; token counts use SKATE's own chars÷4 estimator. The harness prints the same caveats it was built under.
+
 ## Demo scenario: Harborlight
 
 The repository includes **fictional nonprofit workshop material** for Harborlight. It demonstrates the product without exposing client or personal data.
@@ -259,19 +299,20 @@ A judge can follow this story:
 
 1. Open a Harborlight workshop session and review realistic, human-style meeting notes.
 2. Notice plain text mixed with compact capture signals such as `#O` observation, `#P` pain, `#Q` question, and `#A` action.
-3. Use Spotter or Spotter Live to add workshop evidence.
+3. Use Spotter or Spotter Live to add workshop evidence — or paste a screenshot straight into a note with Ctrl+V.
 4. Inspect the session in the 2D or 3D knowledge graph.
 5. Select the active session and click **Start the GRIND**.
 6. Review pain points, How-Might-We prompts, and solution starters.
 7. Use **Open** to trace an output back to its source note.
 8. Check **The Lineup** to see captured `#A` actions as traceable checklist items.
 9. Export the complete ranked synthesis to Excel.
+10. Reproduce every performance claim in this README: `python tools/benchmark_retrieval.py`.
 
 ## Run SKATE
 
 ### Fastest path on Windows
 
-**Requirements:** Windows and Python **3.10–3.13**. During Python installation, select **Add Python to PATH**.
+**Requirements:** Windows. Python itself is optional — `Start SKATE.bat` finds a compatible installed Python (3.10+) or bootstraps a private CPython automatically via [`tools/bootstrap-python.ps1`](tools/bootstrap-python.ps1), with no admin rights required.
 
 ```powershell
 git clone https://github.com/SixSigmaEngineer/skate-workshop-os.git
@@ -308,6 +349,8 @@ The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `
 - Notes, sessions, and transcripts are stored as local files under the SKATE project or vault.
 - Markdown and YAML are readable without SKATE and can be versioned, backed up, moved, or inspected with ordinary tools.
 - Uploaded recordings are always transcribed locally — recording audio never leaves this computer. Cloud speech services apply only to Spotter Live's optional realtime captions.
+- The meeting recorder captures what the PC hears locally: no bot joins the call, no calendar or tenant access is requested, and transcription runs on-device via faster-whisper.
+- Note attachments (screenshots, files) are stored in the session folder on the local disk, alongside the notes that reference them.
 - Optional semantic embeddings can run locally and are cached by content hash.
 - The server binds to `127.0.0.1`, not a public network interface by default.
 - `settings.json`, private conversations, transcripts, logs, and local model artifacts are excluded through `.gitignore`.
@@ -323,6 +366,7 @@ The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `
 | Memory | Markdown, YAML frontmatter, typed relationships |
 | Retrieval | Weighted lexical scoring, optional FastEmbed or Ollama embeddings |
 | Speech | OpenAI realtime transcription and voice; Local Whisper fallback; optional ElevenLabs diarization |
+| Meeting capture | WASAPI system-audio loopback (`soundcard`) mixed with the microphone; on-device faster-whisper transcription |
 | Visualization | Custom 2D/3D WebGL knowledge graph |
 | Export | Excel workshop synthesis |
 | Physical HMI | Elgato Stream Deck Neo and custom microphone housing |

@@ -70,3 +70,6 @@ desktop.ini
 
 # Prior-event branding asset kept local, not part of this repo
 branding-images/SOL-GPT-5.6.png
+
+# scratch folder used when files cannot be deleted through the sync mount
+_to_delete/
