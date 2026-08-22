@@ -36,6 +36,8 @@ class CaptureSignalSyntaxTests(unittest.TestCase):
 
             - #P: dashed hash pain
             #P: bare hash pain
+            # P heading-style pain
+            - #P colonless dashed pain
             - Pain: dashed label pain
             Pain: bare label pain
             - Action Item: label with suffix
@@ -60,8 +62,9 @@ class CaptureSignalSyntaxTests(unittest.TestCase):
         entries = skate_lib.load_all_entries()
         self.assertEqual(len(entries), 1)
         markers = skate_lib.capture_markers(entries[0])
-        self.assertEqual(len(markers["pain"]), 4)
+        self.assertEqual(len(markers["pain"]), 6)
         self.assertIn("bare label pain", markers["pain"])
+        self.assertIn("heading-style pain", markers["pain"])
 
     def test_label_variants_map_to_their_types(self):
         entries = skate_lib.load_all_entries()
@@ -83,7 +86,27 @@ class CaptureSignalSyntaxTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         # Both hash pains (dashed and bare) must appear as decorated lines,
         # not merged into one paragraph.
-        self.assertGreaterEqual(response.text.count("capture-line-p"), 2)
+        self.assertGreaterEqual(response.text.count("capture-line-p"), 4)
+        self.assertNotIn("<h1>P heading-style pain</h1>", response.text)
+
+    def test_compression_cleans_llm_bullets_before_adding_plain_markers(self):
+        fallback = skate_app._local_note_compression("Test", "", "raw note")
+        normalized = skate_app._normalize_compression(
+            {
+                "gist": "A gist",
+                "consulting_context": "A context",
+                "pain_points": ["- #P: Repeated entry"],
+                "observations": ["* Observation: Staff reconcile records"],
+                "actions": ["#A Assign an owner"],
+            },
+            fallback,
+        )
+        self.assertEqual(normalized["pain_points"], ["Repeated entry"])
+        self.assertEqual(normalized["observations"], ["Staff reconcile records"])
+        self.assertEqual(normalized["actions"], ["Assign an owner"])
+        markdown = skate_app._compression_markdown(normalized)
+        self.assertIn("#P: Repeated entry", markdown)
+        self.assertNotIn("- #P:", markdown)
 
     def test_grind_prewarms_a_deterministic_calm_signal_layout(self):
         template = (ROOT / "ui" / "templates" / "graph.html").read_text(encoding="utf-8")
