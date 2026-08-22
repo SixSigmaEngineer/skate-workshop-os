@@ -10,6 +10,10 @@ pywebview>=5.0
 imageio-ffmpeg>=0.4.9
 mcp>=1.23,<2
 
+# System-audio (WASAPI loopback) capture for the Spotter Live meeting
+# recorder. Pure-Python + cffi, no wheels to chase across Python versions.
+soundcard>=0.4
+
 # Local/offline transcription engine. CTranslate2-based: no PyTorch, decodes
 # audio via bundled PyAV (no external ffmpeg), models download on first use
 # into models/whisper. Ships inside the packaged Windows app.

@@ -149,6 +149,12 @@ contradicts | harborlight-service-access-2026/2026-07-15-hl-shadow-resource-list
     </div>
   </section>
 
+  <div style="display:flex;align-items:center;gap:10px;margin:12px 0 6px;flex-wrap:wrap;">
+    <button class="button" type="button" id="attachButton">Attach files</button>
+    <span class="muted">…or paste a screenshot (Ctrl+V) or drop files straight into the note. Saved to this session's attachments folder.</span>
+    <input type="file" id="attachInput" multiple hidden>
+    <span id="attachStatus" class="muted"></span>
+  </div>
   <label>Markdown<textarea name="body" id="body" rows="22" placeholder="# Title
 
 ## Meeting notes
@@ -159,6 +165,17 @@ contradicts | harborlight-service-access-2026/2026-07-15-hl-shadow-resource-list
 #A: an action to follow up
 
 Just start typing — the quick-capture buttons above insert markers wherever your cursor is. No dash needed.">{{ body }}</textarea></label>
+  <style>
+    .attach-gallery{display:none;gap:10px;flex-wrap:wrap;margin:10px 0;}
+    .attach-card{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 8px;
+      border:1px solid #dbe3ec;border-radius:8px;text-decoration:none;color:#53657e;
+      font-size:12px;max-width:150px;background:#fff;}
+    .attach-card:hover{border-color:#4d6fa3;}
+    .attach-card img{max-height:96px;max-width:132px;border-radius:4px;object-fit:cover;}
+    .attach-card .attach-doc{font-weight:600;padding:14px 4px;word-break:break-all;text-align:center;}
+    .attach-card span{word-break:break-all;text-align:center;}
+  </style>
+  <div id="attachGallery" class="attach-gallery" aria-label="Files attached to this note"></div>
   <div id="statusLine" class="muted"></div>
   <button class="button primary" type="submit"><img class="button-icon" src="/static/icons/save.svg" alt="">Save Memory Object</button>
 </form>
@@ -649,5 +666,143 @@ document.addEventListener("selectionchange", () => {
   if (document.activeElement === body) refreshSummarizeAvailability();
 });
 refreshSummarizeAvailability();
+
+// ---- attachments: paste a screenshot, drop files, or pick them -------------
+const attachButton = document.getElementById("attachButton");
+const attachInput = document.getElementById("attachInput");
+const attachStatus = document.getElementById("attachStatus");
+
+function attachSetStatus(message, isError) {
+  attachStatus.textContent = message || "";
+  attachStatus.style.color = isError ? "#b94a48" : "";
+}
+
+function attachSessionValue() {
+  const select = document.getElementById("sessionSelect");
+  const label = document.getElementById("sessionLabel");
+  return (select && select.value) || (label && label.value) || "unassigned";
+}
+
+function attachInsertAtCursor(snippet) {
+  const start = body.selectionStart ?? body.value.length;
+  const end = body.selectionEnd ?? body.value.length;
+  const before = body.value.slice(0, start);
+  const after = body.value.slice(end);
+  const pad = before && !before.endsWith("\n") ? "\n" : "";
+  body.value = before + pad + snippet + "\n" + after;
+  const cursor = (before + pad + snippet + "\n").length;
+  body.setSelectionRange(cursor, cursor);
+  body.focus();
+}
+
+function attachFileName(file) {
+  if (file.name && file.name !== "image.png") return file.name;
+  const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  const ext = (file.type && file.type.split("/")[1]) || "png";
+  return "paste-" + stamp + "." + ext;
+}
+
+async function attachUploadOne(file) {
+  const name = attachFileName(file);
+  attachSetStatus("Uploading " + name + "\u2026");
+  const params = new URLSearchParams({session: attachSessionValue(), filename: name});
+  const res = await fetch("/api/attachments?" + params.toString(), {method: "POST", body: file});
+  const data = await res.json().catch(() => ({ok: false, error: "Upload failed."}));
+  if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed.");
+  attachInsertAtCursor(data.markdown);
+  attachSetStatus("Attached " + data.path);
+  refreshAttachGallery();
+}
+
+async function attachUploadAll(files) {
+  for (const file of files) {
+    try {
+      await attachUploadOne(file);
+    } catch (err) {
+      attachSetStatus(String(err.message || err), true);
+    }
+  }
+}
+
+body.addEventListener("paste", (event) => {
+  const files = [...(event.clipboardData?.items || [])]
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+  if (!files.length) return;
+  event.preventDefault();
+  attachUploadAll(files);
+});
+
+body.addEventListener("dragover", (event) => event.preventDefault());
+body.addEventListener("drop", (event) => {
+  const files = [...(event.dataTransfer?.files || [])];
+  if (!files.length) return;
+  event.preventDefault();
+  attachUploadAll(files);
+});
+
+// ---- attachment gallery: everything the note references, as thumbnails ----
+const attachGallery = document.getElementById("attachGallery");
+
+function attachSlugify(text) {
+  return (text || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function refreshAttachGallery() {
+  const seen = [...new Set(
+    [...body.value.matchAll(/\(attachments\/([A-Za-z0-9._-]+)\)/g)].map((m) => m[1])
+  )];
+  attachGallery.innerHTML = "";
+  if (!seen.length) { attachGallery.style.display = "none"; return; }
+  attachGallery.style.display = "flex";
+  const sess = attachSlugify(attachSessionValue()) || "unassigned";
+  for (const name of seen) {
+    const url = "/entry/" + sess + "/attachments/" + name;
+    const card = document.createElement("a");
+    card.className = "attach-card";
+    card.href = url;
+    card.target = "_blank";
+    card.rel = "noopener";
+    if (/\.(png|jpe?g|gif|webp)$/i.test(name)) {
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = name;
+      img.loading = "lazy";
+      img.addEventListener("error", () => {
+        img.remove();
+        const chip = document.createElement("span");
+        chip.className = "attach-doc";
+        chip.textContent = name + " (missing)";
+        card.prepend(chip);
+      });
+      card.appendChild(img);
+      const caption = document.createElement("span");
+      caption.textContent = name;
+      card.appendChild(caption);
+    } else {
+      const chip = document.createElement("span");
+      chip.className = "attach-doc";
+      chip.textContent = name;
+      card.appendChild(chip);
+    }
+    attachGallery.appendChild(card);
+  }
+}
+
+let attachGalleryTimer = null;
+body.addEventListener("input", () => {
+  clearTimeout(attachGalleryTimer);
+  attachGalleryTimer = setTimeout(refreshAttachGallery, 500);
+});
+const attachSessionSelect = document.getElementById("sessionSelect");
+if (attachSessionSelect) attachSessionSelect.addEventListener("change", refreshAttachGallery);
+refreshAttachGallery();
+
+attachButton.addEventListener("click", () => attachInput.click());
+attachInput.addEventListener("change", () => {
+  attachUploadAll([...attachInput.files]);
+  attachInput.value = "";
+});
 </script>
 {% endblock %}

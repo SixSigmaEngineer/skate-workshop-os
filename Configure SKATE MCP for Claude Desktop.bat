@@ -2,6 +2,11 @@
 setlocal EnableExtensions
 title Configure SKATE MCP for Claude Desktop
 
+rem /quiet is passed by the installer. It suppresses the closing pause so the
+rem post-install step does not leave a console window waiting for a keypress.
+set "SKATE_QUIET="
+if /I "%~1"=="/quiet" set "SKATE_QUIET=1"
+
 set "SKATE_ROOT=%~dp0"
 set "SKATE_MCP_EXE=%SKATE_ROOT%SKATE-MCP.exe"
 set "SKATE_PYTHON=%SKATE_ROOT%.venv\Scripts\python.exe"
@@ -25,10 +30,21 @@ if errorlevel 1 (
 
 :runtime_ready
 
-if not exist "%APPDATA%\Claude" (
-    echo Claude Desktop does not appear to be installed yet.
-    echo The configuration will still be written so Claude Desktop
-    echo finds SKATE the first time it starts.
+if not exist "%HELPER%" (
+    echo The Claude Desktop helper script is missing:
+    echo   %HELPER%
+    goto :fail
+)
+
+rem Claude Desktop not being installed is a normal state, not a failure. The
+rem config is written anyway so Claude finds SKATE the first time it starts.
+set "CLAUDE_PRESENT="
+if exist "%APPDATA%\Claude" set "CLAUDE_PRESENT=1"
+if not defined CLAUDE_PRESENT if exist "%LOCALAPPDATA%\Packages" for /f "delims=" %%I in ('dir /b /ad "%LOCALAPPDATA%\Packages\Claude_*" 2^>nul') do set "CLAUDE_PRESENT=1"
+if not defined CLAUDE_PRESENT (
+    echo Claude Desktop was not found on this computer.
+    echo Writing the configuration anyway, so that SKATE is already connected
+    echo the first time Claude Desktop runs. Nothing else is needed.
     echo.
 )
 
@@ -45,14 +61,26 @@ if errorlevel 1 (
 )
 
 echo.
-echo Restart Claude Desktop, then look for "skate" under
-echo Settings ^> Developer ^> MCP servers, or ask Claude to
-echo list active SKATE sessions.
-echo.
-pause
+if defined CLAUDE_PRESENT (
+    echo Restart Claude Desktop, then look for "skate" under
+    echo Settings ^> Developer ^> MCP servers, or ask Claude to
+    echo list active SKATE sessions.
+) else (
+    echo SKATE will appear under Settings ^> Developer ^> MCP servers
+    echo once Claude Desktop is installed and started.
+)
+goto :done
+
+:done
+if not defined SKATE_QUIET (
+    echo.
+    pause
+)
 exit /b 0
 
 :fail
-echo.
-pause
+if not defined SKATE_QUIET (
+    echo.
+    pause
+)
 exit /b 1

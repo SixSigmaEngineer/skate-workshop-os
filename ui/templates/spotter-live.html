@@ -27,6 +27,29 @@
 .file-pill { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }
 </style>
 
+<section class="panel" style="margin-bottom:16px;">
+  <h3 style="margin-top:0;">Meeting recorder — records what this PC hears</h3>
+  <p class="muted">Captures system audio (Teams, Zoom, Meet, Webex — any app) plus your microphone, transcribed fully locally.
+     Runs on the SKATE server, so you can leave this page or minimize SKATE while it records —
+     <strong>but closing the SKATE window stops the server and the recording</strong>.
+     When you stop, the transcript is saved as a note in the chosen session automatically.</p>
+  <div class="toolbar" style="flex-wrap:wrap;gap:12px;align-items:center;">
+    <button class="button primary" id="recStartBtn" type="button">
+      <img class="button-icon" src="/static/icons/record.svg?v=red1" alt=""><span>Start recording</span>
+    </button>
+    <button class="button" id="recStopBtn" type="button" disabled>Stop &amp; save note</button>
+    <label>Session
+      <select id="recSession">
+        {% for s in sessions %}<option value="{{ s.key }}" data-label="{{ s.label }}">{{ s.label }}</option>{% endfor %}
+        <option value="unassigned" data-label="Unassigned">Unassigned</option>
+      </select>
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="recMic" checked> include my microphone</label>
+    <span class="muted" id="recStatus"><span class="live-dot" id="recDot"></span><span id="recStatusText">Idle</span></span>
+  </div>
+  <p class="muted" id="recResult" style="margin:8px 0 0;"></p>
+</section>
+
 <section class="live-grid">
   <div class="panel">
     <div class="toolbar" style="flex-wrap: wrap; gap: 10px;">
@@ -805,5 +828,84 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("beforeunload", () => { if (roomActive) stopRoom(); });
+
+// ---- meeting recorder (system audio, server-side) --------------------------
+const recStartBtn = document.getElementById("recStartBtn");
+const recStopBtn = document.getElementById("recStopBtn");
+const recSession = document.getElementById("recSession");
+const recMic = document.getElementById("recMic");
+const recDot = document.getElementById("recDot");
+const recStatusText = document.getElementById("recStatusText");
+const recResult = document.getElementById("recResult");
+let recTimer = null;
+
+function recRender(status) {
+  const state = status.state || "idle";
+  recDot.classList.toggle("on", state === "recording");
+  recStartBtn.disabled = state === "recording" || state === "stopping" || state === "transcribing";
+  recStopBtn.disabled = state !== "recording";
+  recSession.disabled = recMic.disabled = state === "recording";
+  if (state === "recording") {
+    const s = status.elapsed || 0;
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    recStatusText.textContent = "Recording " + mm + ":" + ss;
+    if ((status.warnings || []).length) recResult.textContent = "Warning: " + status.warnings.join("; ");
+  } else if (state === "stopping") {
+    recStatusText.textContent = "Finishing up\u2026";
+  } else if (state === "transcribing") {
+    recStatusText.textContent = "Transcribing\u2026 " + (status.progress || 0) + "%" +
+      (status.phase ? " \u00b7 " + status.phase : "");
+  } else if (state === "saved") {
+    recStatusText.textContent = "Saved";
+    recResult.innerHTML = "Transcript saved as a note: <a href=\"" + status.url + "\">" +
+      status.note + "</a>";
+  } else if (state === "error") {
+    recStatusText.textContent = "Error";
+    recResult.textContent = status.error || "Recording failed.";
+  } else {
+    recStatusText.textContent = "Idle";
+  }
+}
+
+async function recPoll() {
+  try {
+    const res = await fetch("/api/recorder/status", {cache: "no-store"});
+    const status = await res.json();
+    recRender(status);
+    const active = ["recording", "stopping", "transcribing"].includes(status.state);
+    if (active && !recTimer) recTimer = setInterval(recPoll, 2000);
+    if (!active && recTimer) { clearInterval(recTimer); recTimer = null; }
+  } catch (err) { /* server briefly unreachable; next poll retries */ }
+}
+
+recStartBtn.addEventListener("click", async () => {
+  recResult.textContent = "";
+  const option = recSession.selectedOptions[0];
+  const res = await fetch("/api/recorder/start", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      session: recSession.value,
+      session_label: option ? option.dataset.label : "",
+      include_mic: recMic.checked,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) {
+    recResult.textContent = data.error || "Could not start the recorder.";
+    return;
+  }
+  recPoll();
+  if (!recTimer) recTimer = setInterval(recPoll, 2000);
+});
+
+recStopBtn.addEventListener("click", async () => {
+  await fetch("/api/recorder/stop", {method: "POST"});
+  recPoll();
+  if (!recTimer) recTimer = setInterval(recPoll, 2000);
+});
+
+recPoll();
 </script>
 {% endblock %}

@@ -37,6 +37,6 @@ Name: "{autoprograms}\SKATE"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\SKATE"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Configure SKATE MCP for Codex.bat"; Description: "Connect SKATE memory to Codex"; Flags: postinstall shellexec skipifsilent; Tasks: connectcodex
-Filename: "{app}\Configure SKATE MCP for Claude Desktop.bat"; Description: "Connect SKATE memory to Claude Desktop"; Flags: postinstall shellexec skipifsilent; Tasks: connectclaude
+Filename: "{app}\Configure SKATE MCP for Codex.bat"; Parameters: "/quiet"; Description: "Connect SKATE memory to Codex"; Flags: postinstall shellexec skipifsilent; Tasks: connectcodex
+Filename: "{app}\Configure SKATE MCP for Claude Desktop.bat"; Parameters: "/quiet"; Description: "Connect SKATE memory to Claude Desktop"; Flags: postinstall shellexec skipifsilent; Tasks: connectclaude
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch SKATE"; Flags: nowait postinstall skipifsilent

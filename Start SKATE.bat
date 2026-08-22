@@ -21,6 +21,13 @@ set "SKATE_HOST=127.0.0.1"
 set "SKATE_PORT=8765"
 set "SKATE_URL=http://127.0.0.1:8765"
 
+rem Python versions SKATE is verified against. Raise SKATE_PY_MAX_TESTED once a
+rem newer CPython has been tested end to end; anything above it is still tried,
+rem but only after a known-good interpreter has been ruled out.
+set "SKATE_PY_MIN=3.10"
+set "SKATE_PY_MAX_TESTED=3.13"
+set "SKATE_PY_PREFERRED=3.13"
+
 cd /d "%SKATE_ROOT%"
 
 if not exist "%SKATE_APP_PATH%" (
@@ -49,33 +56,13 @@ if errorlevel 1 (
 )
 
 if not exist "%SKATE_PYTHON%" (
-    echo Creating SKATE's private Python environment...
-    set "BOOTSTRAP_PYTHON="
-    where py >nul 2>nul
-    if not errorlevel 1 (
-        for %%V in (3.13 3.12 3.11 3.10) do (
-            if not defined BOOTSTRAP_PYTHON (
-                py -%%V -c "import sys; raise SystemExit(0 if sys.version_info[:2] in [(3,10),(3,11),(3,12),(3,13)] else 1)" >nul 2>nul
-                if not errorlevel 1 set "BOOTSTRAP_PYTHON=py -%%V"
-            )
-        )
-    )
-    if not defined BOOTSTRAP_PYTHON (
-        where python >nul 2>nul
-        if not errorlevel 1 (
-            python -c "import sys; raise SystemExit(0 if sys.version_info[:2] in [(3,10),(3,11),(3,12),(3,13)] else 1)" >nul 2>nul
-            if not errorlevel 1 set "BOOTSTRAP_PYTHON=python"
-        )
-    )
-    if not defined BOOTSTRAP_PYTHON (
-        echo ERROR: SKATE needs Python 3.10 through 3.13.
-        echo Install Python from https://www.python.org/downloads/ and select
-        echo "Add Python to PATH", then run this file again.
-        goto :fail
-    )
-    !BOOTSTRAP_PYTHON! -m venv "%SKATE_VENV%"
-    if errorlevel 1 (
-        echo ERROR: Python could not create the private SKATE environment.
+    rem Interpreter discovery lives in PowerShell - it is far easier to read,
+    rem test and extend than nested batch. Run it directly to debug:
+    rem   powershell -ExecutionPolicy Bypass -File "tools\bootstrap-python.ps1" -VenvPath ".venv"
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SKATE_ROOT%tools\bootstrap-python.ps1" -VenvPath "%SKATE_VENV%" -MinVersion "%SKATE_PY_MIN%" -MaxTested "%SKATE_PY_MAX_TESTED%" -PreferVersion "%SKATE_PY_PREFERRED%" -ToolsDir "%SKATE_ROOT%tools"
+    if errorlevel 1 goto :fail
+    if not exist "%SKATE_PYTHON%" (
+        echo ERROR: The private SKATE environment was not created.
         goto :fail
     )
 )

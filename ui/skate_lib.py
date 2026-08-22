@@ -593,7 +593,7 @@ def _note_blocks(entry: Entry, block_type: str) -> list[dict]:
             "insight": r"Insight",
         }
         shortcut_pattern = re.compile(
-            rf"(?im)^\s*(?:[-*]\s+)?(?:\\?#{shortcut}|{label_words[block_type]}):\s*(.+)$"
+            rf"(?im)^\s*(?:[-*]\s+)?(?:\\?#\s*{shortcut}(?:\s*:|\s+)|{label_words[block_type]}:\s*)(.+)$"
         )
         for match in shortcut_pattern.finditer(entry.body or ""):
             title = match.group(1).strip()
@@ -625,33 +625,71 @@ def capture_markers(entry: Entry) -> dict[str, list[str]]:
     }
 
 
+PAIN_KEYWORDS = (
+    "pain",
+    "problem",
+    "friction",
+    "bottleneck",
+    "delay",
+    "confusing",
+    "confusion",
+    "manual",
+    "waste",
+    "hard",
+    "difficult",
+    "risk",
+    "stuck",
+    "unclear",
+    "missing",
+    "fails",
+    "failure",
+    "slow",
+)
+
+# Explicitly marked pains (``#P:``) are pinned to this score so they always
+# outrank anything inferred from prose. Inferred scores are capped below it.
+MARKED_PAIN_SCORE = 10
+
+
 def _pain_score(entry: Entry) -> int:
-    haystack = f"{entry.title} {entry.summary} {' '.join(entry.tags)}".lower()
-    keywords = [
-        "pain",
-        "problem",
-        "friction",
-        "bottleneck",
-        "delay",
-        "confusing",
-        "confusion",
-        "manual",
-        "waste",
-        "hard",
-        "difficult",
-        "risk",
-        "stuck",
-        "unclear",
-        "missing",
-        "fails",
-        "failure",
-        "slow",
-    ]
+    """Score how strongly an unmarked note reads as a pain point.
+
+    Reads the whole note body, not just the title and first paragraph. A
+    facilitator typing fast in the room routinely describes the real problem
+    three paragraphs down without stopping to mark it; scoring only the
+    opening paragraph made those notes invisible to the GRIND.
+
+    A keyword counts once, wherever it appears, so a long note cannot
+    outrank a sharp one through sheer repetition. Title and tag matches are
+    weighted higher because naming the problem in the title is a deliberate
+    act. The total is capped below MARKED_PAIN_SCORE so an explicitly marked
+    pain always ranks first.
+    """
+    titled = f"{entry.title} {' '.join(entry.tags)}".lower()
+    full = f"{entry.summary} {entry.body}".lower()
     score = 0
-    score += sum(2 for word in keywords if word in haystack)
-    if "?" in entry.summary:
+    for word in PAIN_KEYWORDS:
+        if word in titled:
+            score += 2
+        elif word in full:
+            score += 1
+    if "?" in (entry.summary or ""):
         score += 1
-    return score
+    return min(score, MARKED_PAIN_SCORE - 1)
+
+
+# Used only to fill solution slots left empty after every #S, #R and #A marker
+# has been used. One repeated sentence read as boilerplate, so these rotate and
+# each proposes a different first move. Edit freely - they are facilitation
+# prompts, not logic.
+SOLUTION_STARTER_FRAMINGS = (
+    "Pilot the narrowest slice: one team, one workflow, two weeks, and one measure of whether it improved.",
+    "Instrument before changing anything: make the step where this shows up visible, and agree what better would look like.",
+    "Remove a handoff rather than adding a tool: find the step that could carry its context forward instead of restarting.",
+    "Write down how the best person already handles this, then test whether it transfers to someone else.",
+    "Design the exception path first: decide who gets told, and how fast, when this fails.",
+    "Cut the input, not the effort: work out which information is genuinely required at this step and drop the rest.",
+)
 
 
 def design_insights(entries: list[Entry], graph: dict | None = None) -> dict:
@@ -700,7 +738,7 @@ def design_insights(entries: list[Entry], graph: dict | None = None) -> dict:
         pains.append(
             {
                 **block,
-                "score": 10,
+                "score": MARKED_PAIN_SCORE,
                 "entry_type": "note",
                 "capture_title": f"Pain: {block['title']}",
                 "capture_summary": block["summary"],
@@ -841,7 +879,7 @@ def design_insights(entries: list[Entry], graph: dict | None = None) -> dict:
     for index, pain in enumerate(pains[:10]):
         if len(solutions) >= 10:
             break
-        idea = "Create a small testable workflow change: define the trigger, the next best action, and the evidence that the pain is improving."
+        idea = SOLUTION_STARTER_FRAMINGS[index % len(SOLUTION_STARTER_FRAMINGS)]
         source_url = pain["source_url"]
         title = f"Starter solution: {pain['title']}"
         if title in seen_solutions:

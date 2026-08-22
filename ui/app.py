@@ -46,6 +46,7 @@ from fastapi.templating import Jinja2Templates
 
 from skate_lib import (
     CONVERSATIONS,
+    PAIN_KEYWORDS,
     CONSULTING_THEMES,
     ENTRY_TYPES,
     RELATIONSHIP_TYPES,
@@ -478,9 +479,192 @@ def _sidebar_context() -> dict:
     }
 
 
+# Notes sent to the model in one synthesis pass. Anything beyond this is
+# dropped, so the UI says so rather than silently narrowing the session.
+MAX_SYNTHESIS_NOTES = 40
+
+# Total note text sent for synthesis, in characters (~9k tokens). Deliberately
+# bounded rather than "send everything": long contexts measurably reduce recall
+# well before a window is full, so a small relevant payload beats a large one.
+SYNTHESIS_BODY_BUDGET = 36_000
+
+# Every note gets at least this much before any note gets more, so a single
+# long transcript cannot starve twelve short notes.
+SYNTHESIS_BODY_FLOOR = 600
+
+# Markers per type per note. A marker-heavy note used to spend the whole
+# budget on signals and leave no room for the prose around them.
+MAX_MARKERS_PER_TYPE = 12
+
+
+def _allocate_body_budget(lengths: list[int]) -> list[int]:
+    """Share the body budget across notes by what each actually needs.
+
+    Water-filling: every note is guaranteed a floor, then whatever is left is
+    handed out in even rounds to the notes still wanting more. Short notes
+    take only what they use and release the rest, so a session of twelve brief
+    notes plus one 90-minute transcript gives the transcript the surplus
+    instead of truncating everything to an identical arbitrary width.
+    """
+    if not lengths:
+        return []
+    budget = max(SYNTHESIS_BODY_BUDGET, SYNTHESIS_BODY_FLOOR * len(lengths))
+    limits = [min(length, SYNTHESIS_BODY_FLOOR) for length in lengths]
+    remaining = budget - sum(limits)
+    while remaining > 0:
+        hungry = [i for i, length in enumerate(lengths) if length > limits[i]]
+        if not hungry:
+            break
+        share = max(1, remaining // len(hungry))
+        moved = False
+        for i in hungry:
+            give = min(share, lengths[i] - limits[i], remaining)
+            if give <= 0:
+                continue
+            limits[i] += give
+            remaining -= give
+            moved = True
+            if remaining <= 0:
+                break
+        if not moved:
+            break
+    return limits
+
+
+# Marks elided text inside a selected excerpt so the model knows content was
+# skipped rather than assuming it saw the whole note.
+BODY_GAP_MARK = "[...]"
+
+_MARKER_LINE = re.compile(
+    r"(?im)^\s*(?:[-*]\s+)?"
+    r"(?:\\?#\s*[POAQSRI](?:\s*:|\s+)"
+    r"|(?:Pain|Observation|Action(?:\s+Item)?|(?:Open\s+)?Question|Solution|Recommendation|Insight)\s*:)"
+)
+
+
+def _split_body_chunks(body: str, target: int = 800) -> list[str]:
+    """Split a body into scoreable chunks.
+
+    Blank-line paragraphs first. Transcript-style walls of text (one block,
+    line breaks per utterance, no blank lines) are regrouped into
+    roughly target-sized runs of lines so selection can still reach into the
+    middle and end of a long meeting instead of degenerating to "keep the
+    opening"."""
+    chunks: list[str] = []
+    for para in re.split(r"\n\s*\n", body):
+        para = para.strip("\n")
+        if not para.strip():
+            continue
+        if len(para) <= max(target, 400):
+            chunks.append(para)
+            continue
+        current = ""
+        for line in para.splitlines():
+            if current and len(current) + len(line) + 1 > target:
+                chunks.append(current)
+                current = line
+            else:
+                current = f"{current}\n{line}" if current else line
+        if current:
+            chunks.append(current)
+    sliced: list[str] = []
+    for chunk in chunks:
+        if len(chunk) <= 2 * target:
+            sliced.append(chunk)
+        else:  # a single enormous line with no breaks at all
+            sliced.extend(chunk[i : i + target] for i in range(0, len(chunk), target))
+    return sliced
+
+
+def _score_chunk(text: str, index: int, last_index: int) -> float:
+    """Rank a chunk's claim on the body budget.
+
+    Marked lines outrank everything - they are deliberate capture. The first
+    and last chunks are kept next, because meeting notes state the problem at
+    the top and record decisions and actions at the bottom, and tail-first
+    truncation used to throw the bottom away. Everything else competes on the
+    same pain vocabulary the local GRIND scores with."""
+    score = 0.0
+    if _MARKER_LINE.search(text):
+        score += 100.0
+    if index == 0 or index == last_index:
+        score += 40.0
+    lowered = text.lower()
+    score += sum(4.0 for word in PAIN_KEYWORDS if word in lowered)
+    if "?" in text:
+        score += 2.0
+    return score
+
+
+def _select_body_excerpt(body: str, limit: int) -> tuple[str, bool]:
+    """Fit a note into its budget by relevance instead of position.
+
+    A body within budget passes through untouched. Otherwise chunks are chosen
+    by _score_chunk, reassembled in document order, and gaps are marked with
+    BODY_GAP_MARK. Never returns more than `limit` characters."""
+    body = body.strip()
+    if len(body) <= limit:
+        return body, False
+    chunks = _split_body_chunks(body)
+    if len(chunks) <= 1:
+        return body[:limit], True
+    last = len(chunks) - 1
+    order = sorted(
+        range(len(chunks)),
+        key=lambda i: (-_score_chunk(chunks[i], i, last), i),
+    )
+    overhead = len(BODY_GAP_MARK) + 4  # joiners plus a possible gap marker
+    chosen: set[int] = set()
+    used = 0
+    for i in order:
+        cost = len(chunks[i]) + overhead
+        if used + cost > limit:
+            continue
+        chosen.add(i)
+        used += cost
+    if not chosen:
+        return body[:limit], True
+    parts: list[str] = []
+    previous = None
+    for i in sorted(chosen):
+        if previous is None:
+            if i != 0:
+                parts.append(BODY_GAP_MARK)
+        elif i != previous + 1:
+            parts.append(BODY_GAP_MARK)
+        parts.append(chunks[i])
+        previous = i
+    if last not in chosen:
+        parts.append(BODY_GAP_MARK)
+    return "\n\n".join(parts)[:limit], True
+
+
 def _entry_payload(entries) -> list[dict]:
+    """Build the note payload for AI synthesis.
+
+    Sends the note body, not just the summary. `summary` is only the
+    "## Summary" section or the first non-heading paragraph, so on a normal
+    multi-paragraph facilitator note it can be a single opening line - the
+    model never saw the paragraphs where the actual problem was described.
+
+    The budget is shared by need rather than split evenly - see
+    _allocate_body_budget - so one long transcript in a session of short notes
+    keeps most of itself instead of every note being cut to the same width.
+
+    `summary` is deliberately not sent: it is derived from the body, so
+    including both shipped the opening paragraph twice and spent budget that
+    is better given to the rest of the note.
+    """
+    scoped = entries[:MAX_SYNTHESIS_NOTES]
+    bodies = [_normalize_newlines(entry.body or "").strip() for entry in scoped]
+    limits = _allocate_body_budget([len(body) for body in bodies])
     payload = []
-    for entry in entries[:40]:
+    for entry, body, limit in zip(scoped, bodies, limits):
+        excerpt, truncated = _select_body_excerpt(body, limit)
+        markers = {
+            marker_type: texts[:MAX_MARKERS_PER_TYPE]
+            for marker_type, texts in capture_markers(entry).items()
+        }
         payload.append(
             {
                 "title": entry.title,
@@ -488,8 +672,9 @@ def _entry_payload(entries) -> list[dict]:
                 "type": entry.entry_type,
                 "themes": entry.themes,
                 "tags": entry.tags,
-                "summary": entry.summary[:900],
-                "capture_markers": capture_markers(entry),
+                "capture_markers": markers,
+                "body": excerpt,
+                "body_truncated": truncated,
             }
         )
     return payload
@@ -506,6 +691,11 @@ def _synthesis_prompt(entries, graph: dict) -> str:
         "#P pains and unmet needs; #O direct observations; #Q open questions and HMW seeds; "
         "#A owned actions or experiments; #S proposed solutions; #R recommendations; "
         "and #I synthesized insights. Do not flatten these categories or invent evidence. "
+        "Each note also carries `body`: the note as the facilitator actually wrote it. "
+        "Markers remain the primary evidence and should be preferred wherever they exist, "
+        "but the body often describes a problem that nobody stopped to mark in the room - "
+        "read it, and surface those too, attributing them to the note they came from. "
+        "`body_truncated` true means the note exceeded its budget, so `body` is a relevance-selected excerpt and [...] marks skipped text. "
         "Use observations to support pains, insights to connect patterns, questions to frame HMW prompts, "
         "and solutions/recommendations/actions to create testable solution starters. "
         "Read the scoped notes and return ONLY valid JSON with this shape: "
@@ -934,12 +1124,25 @@ def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
     raise ValueError(f"Unknown LLM provider: {provider}")
 
 
+def _scope_notice(entries) -> str:
+    """Tell the user when a session is larger than one synthesis pass."""
+    extra = len(entries) - MAX_SYNTHESIS_NOTES
+    if extra <= 0:
+        return ""
+    return (
+        f"This session has {len(entries)} active notes. AI synthesis reads the first "
+        f"{MAX_SYNTHESIS_NOTES}, so {extra} were not included. Narrow the scope, or mark "
+        "the key signals in the remaining notes so they carry into the next pass."
+    )
+
+
 def _grind_insights(entries, graph: dict) -> dict:
     settings = _load_settings()
     grind_settings = _grind_settings(settings)
     provider = grind_settings.get("provider", "openai")
     local = design_insights(entries, graph)
     local["mode"] = "local"
+    local["scope_notice"] = _scope_notice(entries)
     local["provider"] = provider
     local["model"] = _active_model(grind_settings)
     local["reasoning_effort"] = grind_settings.get("reasoning_effort", "medium")
@@ -962,6 +1165,7 @@ def _grind_insights(entries, graph: dict) -> dict:
         ai["reasoning_effort"] = grind_settings.get("reasoning_effort", "medium")
         ai["error"] = ""
         ai["marker_counts"] = local.get("marker_counts", {})
+        ai["scope_notice"] = local.get("scope_notice", "")
         return ai
     except (ValueError, KeyError, json.JSONDecodeError, HTTPError, URLError, TimeoutError, OSError) as e:
         local["error"] = f"AI synthesis failed; showing local synthesis. {e}"
@@ -1115,6 +1319,8 @@ Common themes, but generate better content-specific themes when useful:
 Relationship types:
 {relationships}
 
+Return clean signal text inside the JSON arrays only. Do not add bullets, Markdown headings, or prefixes such as #P: and #O:; SKATE adds its plain line-start markers after parsing the JSON.
+
 Return only JSON with:
 {{
   "entry_type": "one memory object type",
@@ -1173,7 +1379,7 @@ def _local_note_compression(title: str, tags: str, body: str) -> dict:
         "insights": [],
     }
     marker_keys = {"O": "observations", "P": "pain_points", "A": "actions", "Q": "questions", "I": "insights"}
-    signal_pattern = re.compile(r"^\s*(?:[-*]\s+)?\\?#([OPAQI]):\s*(.+)$", flags=re.I)
+    signal_pattern = re.compile(r"^\s*(?:[-*]\s+)?\\?#\s*([OPAQI])(?:\s*:|\s+)(.+)$", flags=re.I)
     plain_lines = []
     for line in lines:
         match = signal_pattern.match(line)
@@ -1224,6 +1430,14 @@ def _normalize_compression(raw: dict, fallback: dict) -> dict:
         out = []
         for item in values:
             text = str(item).strip()
+            text = re.sub(r"^[-*•]\s*", "", text).strip()
+            if key in {"observations", "pain_points", "actions", "questions", "insights"}:
+                text = re.sub(
+                    r"^(?:\\?#\s*[OPAQI](?:\s*:|\s+)|(?:Observation|Pain|Action(?:\s+Item)?|(?:Open\s+)?Question|Insight):\s*)",
+                    "",
+                    text,
+                    flags=re.I,
+                ).strip()
             if text and text not in out:
                 out.append(text)
         return out[:limit]
@@ -2145,6 +2359,29 @@ def _notes_folder() -> Path:
     return folder
 
 
+def _normalize_newlines(text: str) -> str:
+    """Collapse CRLF/CR to LF.
+
+    HTML form submission normalises every textarea value to CRLF, so a note
+    round-tripped through the editor arrives here full of \r\n. Left alone it
+    reaches write_text() below, which on Windows translates each \n to \r\n
+    again and produces \r\r\n - read back as two line breaks. Every save then
+    doubles the blank lines in the note.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _write_note(path: Path, post) -> None:
+    """Write a note with LF endings regardless of platform.
+
+    newline="" stops Python translating \n to os.linesep on Windows. The vault
+    is git-tracked and shared between machines, so one ending everywhere.
+    """
+    post.content = _normalize_newlines(post.content or "")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(frontmatter.dumps(post), encoding="utf-8", newline="")
+
+
 def _write_entry(
     path: Path,
     title: str,
@@ -2194,9 +2431,8 @@ def _write_entry(
                 "captured_from": captured_from.strip(),
             }
         )
-    post = frontmatter.Post(body.strip() + "\n", **metadata)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(frontmatter.dumps(post), encoding="utf-8")
+    post = frontmatter.Post(_normalize_newlines(body).strip() + "\n", **metadata)
+    _write_note(path, post)
 
 
 def _default_note_body(title: str, summary: str = "") -> str:
@@ -2385,7 +2621,7 @@ async def toggle_lineup_item(request: Request, file_id: str):
         landed = entry.lineup_status != "landed"
         post.metadata["lineup_status"] = "landed" if landed else "open"
         post.metadata["last_completed"] = today if landed else ""
-    entry.path.write_text(frontmatter.dumps(post), encoding="utf-8")
+    _write_note(entry.path, post)
     return_to = str(form.get("return_to", "/lineup")).strip()
     if not return_to.startswith("/") or return_to.startswith("//"):
         return_to = "/lineup"
@@ -2581,7 +2817,7 @@ async def create_session(request: Request):
     }
     body = f"# {title}\n\n## Focus\n\n{summary or 'What are we trying to learn or decide?'}\n\n## Readout Notes\n\n- \n"
     folder.mkdir(parents=True, exist_ok=True)
-    path.write_text(frontmatter.dumps(frontmatter.Post(body, **metadata)), encoding="utf-8")
+    _write_note(path, frontmatter.Post(body, **metadata))
     return RedirectResponse(url=f"/session/{session}", status_code=303)
 
 
@@ -2602,7 +2838,7 @@ def _ensure_session(session_slug: str, session_label: str, summary: str = "") ->
     focus = summary or "Imported from Microsoft OneNote."
     body = f"# {metadata['title']}\n\n## Focus\n\n{focus}\n\n## Readout Notes\n\n- \n"
     folder.mkdir(parents=True, exist_ok=True)
-    path.write_text(frontmatter.dumps(frontmatter.Post(body, **metadata)), encoding="utf-8")
+    _write_note(path, frontmatter.Post(body, **metadata))
 
 
 @app.get("/session/{session_key}", response_class=HTMLResponse)
@@ -2646,7 +2882,7 @@ async def update_session_status(request: Request, session_key: str):
 
     post.metadata["status"] = status
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(frontmatter.dumps(post), encoding="utf-8")
+    _write_note(path, post)
 
     if str(form.get("return_to", "")).strip() == "sessions":
         return RedirectResponse(url="/sessions", status_code=303)
@@ -2729,7 +2965,7 @@ async def apply_session_connections(request: Request, session_key: str):
         post.metadata["type"] = suggestion["entry_type"]
         post.metadata["themes"] = suggestion["themes"]
         post.metadata["tags"] = suggestion["tags"]
-        entry.path.write_text(frontmatter.dumps(post), encoding="utf-8")
+        _write_note(entry.path, post)
         changed_files.add(entry.file_id)
         metadata_count += 1
 
@@ -2752,7 +2988,7 @@ async def apply_session_connections(request: Request, session_key: str):
             }
         )
         post.metadata["relationships"] = relationships
-        source.path.write_text(frontmatter.dumps(post), encoding="utf-8")
+        _write_note(source.path, post)
         changed_files.add(source.file_id)
         relationship_count += 1
 
@@ -2765,19 +3001,109 @@ async def apply_session_connections(request: Request, session_key: str):
     }
 
 
+# ------------------------------------------------------------- attachments
+# Pasted screenshots and attached files live beside the notes that reference
+# them: conversations/<session>/attachments/. Notes link to them with relative
+# Markdown (![name](attachments/x.png)), which renders here AND in Obsidian,
+# and the whole folder stays portable - the vault remains plain files.
+
+ATTACHMENTS_DIR_NAME = "attachments"
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+IMAGE_ATTACHMENT_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+# ".md" is deliberately NOT allowed: the vault loader treats every .md under
+# conversations/ as a note, so an attached one would appear as a phantom entry.
+ALLOWED_ATTACHMENT_EXTENSIONS = IMAGE_ATTACHMENT_EXTENSIONS | {
+    ".pdf", ".csv", ".txt", ".docx", ".xlsx", ".pptx", ".zip",
+}
+
+
+def _attachment_dir(session: str) -> Path:
+    slug = _slugify(session) or "unassigned"
+    return CONVERSATIONS / slug / ATTACHMENTS_DIR_NAME
+
+
+@app.post("/api/attachments")
+async def upload_attachment(request: Request, session: str = "", filename: str = ""):
+    """Save one pasted or attached file into the session's attachments folder.
+
+    The request body is the raw file bytes - the same no-multipart pattern the
+    transcription endpoints use, so no new dependency is required. Returns the
+    relative Markdown snippet the note should insert.
+    """
+    extension = Path(filename).suffix.lower()
+    if extension not in ALLOWED_ATTACHMENT_EXTENSIONS:
+        allowed = ", ".join(sorted(ext.lstrip(".") for ext in ALLOWED_ATTACHMENT_EXTENSIONS))
+        return JSONResponse(
+            {"ok": False, "error": f"That file type is not supported. Allowed: {allowed}."},
+            status_code=400,
+        )
+    data = await request.body()
+    if not data:
+        return JSONResponse({"ok": False, "error": "The file was empty."}, status_code=400)
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        limit_mb = MAX_ATTACHMENT_BYTES // (1024 * 1024)
+        return JSONResponse(
+            {"ok": False, "error": f"The file is larger than {limit_mb} MB."},
+            status_code=400,
+        )
+    directory = _attachment_dir(session)
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = _slugify(Path(filename).stem) or "attachment"
+    target = directory / f"{stem}{extension}"
+    counter = 2
+    while target.exists():
+        target = directory / f"{stem}-{counter}{extension}"
+        counter += 1
+    target.write_bytes(data)
+    relative = f"{ATTACHMENTS_DIR_NAME}/{target.name}"
+    if extension in IMAGE_ATTACHMENT_EXTENSIONS:
+        markdown_snippet = f"![{target.stem}]({relative})"
+    else:
+        markdown_snippet = f"[{target.name}]({relative})"
+    return JSONResponse({"ok": True, "path": relative, "markdown": markdown_snippet})
+
+
+@app.get("/entry/{session}/attachments/{filename}")
+def serve_attachment(session: str, filename: str):
+    """Serve an attachment so the relative links inside notes resolve.
+
+    Registered before the catch-all /entry/{file_id:path} route so it wins.
+    """
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return HTMLResponse("Not found", status_code=404)
+    extension = Path(filename).suffix.lower()
+    if extension not in ALLOWED_ATTACHMENT_EXTENSIONS:
+        return HTMLResponse("Not found", status_code=404)
+    directory = _attachment_dir(session)
+    try:
+        target = (directory / filename).resolve()
+        root = directory.resolve()
+    except OSError:
+        return HTMLResponse("Not found", status_code=404)
+    if root not in target.parents or not target.is_file():
+        return HTMLResponse("Not found", status_code=404)
+    media_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    headers = {}
+    if extension not in IMAGE_ATTACHMENT_EXTENSIONS and extension != ".pdf":
+        headers["Content-Disposition"] = f'attachment; filename="{target.name}"'
+    return FileResponse(target, media_type=media_type, headers=headers)
+
+
 @app.get("/entry/{file_id:path}", response_class=HTMLResponse)
 def view_entry(request: Request, file_id: str):
     entry = find_entry_by_id(file_id)
     if entry is None:
         return HTMLResponse("Entry not found", status_code=404)
     MD.reset()
-    # Rendering-only transforms; the markdown source stays exactly as typed.
-    # 1. Dashless marker lines (``#P: ...``) become list items so each signal
-    #    renders on its own colored line instead of merging into a paragraph.
-    render_body = re.sub(r"(?m)^(\s*)#([POAQRSI]):", r"\1- #\2:", entry.body)
-    # 2. Python Markdown treats ``#P:`` after a list marker as an ATX heading;
-    #    escape the marker so it survives conversion.
-    render_body = re.sub(r"(?m)^(\s*-\s+)#([POAQRSI]):", r"\1\\#\2:", render_body)
+    # Rendering-only transform; the markdown source stays exactly as typed.
+    # Normalize bare, bulleted, spaced, and colonless signal markers into a
+    # compact rendered row. Escaping the hash prevents ``# P ...`` from
+    # becoming a large Markdown heading.
+    render_body = re.sub(
+        r"(?im)^(\s*)(?:[-*]\s+)?\\?#\s*([POAQRSI])(?:\s*:|\s+)",
+        r"\1- \\#\2: ",
+        entry.body,
+    )
     body_html = _decorate_capture_markers(MD.convert(render_body))
     embedded_actions = _embedded_actions(entry) if entry.entry_type != "action" else []
     promoted_sources = {candidate.captured_from for candidate in load_all_entries() if candidate.captured_from}
@@ -3394,6 +3720,238 @@ def spotter_live_page(request: Request):
             **sidebar,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Meeting recorder: capture what this PC hears (WASAPI loopback) plus the
+# microphone, transcribe locally with Whisper, and save the result as a note.
+# Runs server-side, so navigating away from the page does not stop it - but
+# closing the SKATE window shuts the server down, recording included. Works
+# with any meeting app (Teams, Zoom, Meet, Webex) because it never touches
+# the meeting itself: no tenant, no calendar, no bot joining the call.
+
+RECORDER_SAMPLERATE = 16_000
+RECORDER_CHUNK_SECONDS = 0.5
+RECORDER_LOCK = threading.Lock()
+RECORDER: dict = {"state": "idle"}
+
+
+def _recorder_available() -> tuple[bool, str]:
+    try:
+        import soundcard  # noqa: F401
+    except Exception as exc:
+        return False, (
+            "System-audio capture needs the 'soundcard' package. "
+            "Run Start SKATE.bat once after updating (it installs new requirements), "
+            f"or: pip install soundcard  ({exc.__class__.__name__})"
+        )
+    return True, ""
+
+
+def _recorder_capture(kind: str, stop_event, chunks: list, errors: list) -> None:
+    """Capture one stream (system loopback or microphone) until stopped."""
+    try:
+        import numpy as np
+        import soundcard as sc
+
+        if kind == "loopback":
+            speaker = sc.default_speaker()
+            source = sc.get_microphone(str(speaker.name), include_loopback=True)
+        else:
+            source = sc.default_microphone()
+        frames = int(RECORDER_SAMPLERATE * RECORDER_CHUNK_SECONDS)
+        with source.recorder(samplerate=RECORDER_SAMPLERATE, channels=1) as recorder:
+            while not stop_event.is_set():
+                data = recorder.record(numframes=frames)
+                mono = data[:, 0] if getattr(data, "ndim", 1) > 1 else data
+                chunks.append(
+                    (mono * 32767.0).clip(-32768, 32767).astype(np.int16)
+                )
+    except Exception as exc:  # surfaced in status; the other stream continues
+        errors.append(f"{kind}: {exc}")
+
+
+def _recorder_wav_bytes(loopback_chunks: list, mic_chunks: list) -> bytes:
+    """Mix the two int16 streams (sum with clipping) into mono WAV bytes."""
+    import numpy as np
+
+    def joined(chunks):
+        return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int16)
+
+    a, b = joined(loopback_chunks), joined(mic_chunks)
+    total = max(len(a), len(b))
+    if total == 0:
+        return b""
+    mixed = (
+        np.pad(a.astype(np.int32), (0, total - len(a)))
+        + np.pad(b.astype(np.int32), (0, total - len(b)))
+    )
+    mixed = np.clip(mixed, -32768, 32767).astype(np.int16)
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(RECORDER_SAMPLERATE)
+        wav.writeframes(mixed.tobytes())
+    return buffer.getvalue()
+
+
+def _recorder_note_body(title: str, transcript: str, include_mic: bool, model_name: str) -> str:
+    sources = "system audio + microphone" if include_mic else "system audio"
+    stamp = time.strftime("%Y-%m-%d %H:%M")
+    return (
+        f"# {title}\n\n"
+        f"Recorded from {sources} on {stamp}. Transcribed locally with Whisper ({model_name}); "
+        f"nothing left this computer.\n\n"
+        f"## Transcript\n\n{transcript.strip()}\n"
+    )
+
+
+def _recorder_save_note(session: str, session_label: str, body: str, title: str) -> str:
+    slug = _slugify(session) or "unassigned"
+    folder = CONVERSATIONS / slug
+    entry_date = date.today().isoformat()
+    path = folder / f"{entry_date}-{_slugify(title)}.md"
+    counter = 2
+    while path.exists():
+        path = folder / f"{entry_date}-{_slugify(title)}-{counter}.md"
+        counter += 1
+    _write_entry(
+        path, title, entry_date, "note", slug, session_label.strip(), "active",
+        ["meeting-recording"], [], [], "active", "system recording", body,
+    )
+    return path.relative_to(CONVERSATIONS).as_posix()
+
+
+def _recorder_finalize(include_mic: bool, session: str, session_label: str, model_name: str) -> None:
+    state = RECORDER
+    try:
+        for thread in state.get("threads", []):
+            thread.join(timeout=10)
+        wav_bytes = _recorder_wav_bytes(state.get("loopback", []), state.get("mic", []))
+        state["loopback"], state["mic"] = [], []
+        if not wav_bytes:
+            problems = "; ".join(state.get("errors", [])) or "no audio was captured"
+            raise RuntimeError(problems)
+        state["state"] = "transcribing"
+        state["progress"] = 0
+
+        def on_progress(percent, phase):
+            state["progress"] = percent
+            state["phase"] = phase
+
+        transcript = _faster_whisper_transcribe(
+            wav_bytes, "meeting-recording.wav", "audio/wav", model_name, on_progress
+        )
+        title = f"Meeting recording {time.strftime('%Y-%m-%d %H:%M')}"
+        body = _recorder_note_body(title, transcript or "(no speech detected)", include_mic, model_name)
+        file_id = _recorder_save_note(session, session_label, body, title)
+        state.update({"state": "saved", "note": file_id, "url": f"/entry/{file_id}"})
+    except Exception as exc:
+        rescue = ""
+        try:
+            if wav_bytes := locals().get("wav_bytes"):
+                slug = _slugify(session) or "unassigned"
+                rescue_dir = CONVERSATIONS / slug / ATTACHMENTS_DIR_NAME
+                rescue_dir.mkdir(parents=True, exist_ok=True)
+                rescue_path = rescue_dir / f"recording-{time.strftime('%Y%m%d-%H%M%S')}.wav"
+                rescue_path.write_bytes(wav_bytes)
+                rescue = f" The audio was saved to {rescue_path.name} in the session's attachments."
+            errors = "; ".join(RECORDER.get("errors", []))
+            detail = f"{exc}" + (f" ({errors})" if errors else "")
+        except Exception:
+            detail = str(exc)
+        state.update({"state": "error", "error": f"{detail}.{rescue}"})
+
+
+@app.post("/api/recorder/start")
+async def recorder_start(request: Request):
+    ok, reason = _recorder_available()
+    if not ok:
+        return JSONResponse({"ok": False, "error": reason}, status_code=400)
+    try:
+        payload = json.loads((await request.body()).decode("utf-8"))
+    except json.JSONDecodeError:
+        payload = {}
+    with RECORDER_LOCK:
+        if RECORDER.get("state") in {"recording", "stopping", "transcribing"}:
+            return JSONResponse({"ok": False, "error": "A recording is already running."}, status_code=409)
+        include_mic = bool(payload.get("include_mic", True))
+        stop_event = threading.Event()
+        loopback_chunks: list = []
+        mic_chunks: list = []
+        errors: list = []
+        threads = [
+            threading.Thread(
+                target=_recorder_capture,
+                args=("loopback", stop_event, loopback_chunks, errors),
+                daemon=True,
+            )
+        ]
+        if include_mic:
+            threads.append(
+                threading.Thread(
+                    target=_recorder_capture,
+                    args=("mic", stop_event, mic_chunks, errors),
+                    daemon=True,
+                )
+            )
+        RECORDER.clear()
+        RECORDER.update({
+            "state": "recording",
+            "started_at": time.time(),
+            "stop_event": stop_event,
+            "threads": threads,
+            "loopback": loopback_chunks,
+            "mic": mic_chunks,
+            "errors": errors,
+            "include_mic": include_mic,
+            "session": str(payload.get("session", "")),
+            "session_label": str(payload.get("session_label", "")),
+        })
+        for thread in threads:
+            thread.start()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/recorder/stop")
+async def recorder_stop():
+    with RECORDER_LOCK:
+        if RECORDER.get("state") != "recording":
+            return JSONResponse({"ok": False, "error": "No recording is running."}, status_code=409)
+        RECORDER["state"] = "stopping"
+        RECORDER["stop_event"].set()
+        settings = _load_settings()
+        model_name = settings.get("transcription_model", "base")
+        threading.Thread(
+            target=_recorder_finalize,
+            args=(
+                RECORDER.get("include_mic", True),
+                RECORDER.get("session", ""),
+                RECORDER.get("session_label", ""),
+                model_name,
+            ),
+            daemon=True,
+        ).start()
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/recorder/status")
+def recorder_status():
+    state = RECORDER.get("state", "idle")
+    payload = {"state": state}
+    if state == "recording":
+        payload["elapsed"] = int(time.time() - RECORDER.get("started_at", time.time()))
+        payload["warnings"] = list(RECORDER.get("errors", []))
+    if state == "transcribing":
+        payload["progress"] = RECORDER.get("progress", 0)
+        payload["phase"] = RECORDER.get("phase", "")
+    if state == "saved":
+        payload["note"] = RECORDER.get("note", "")
+        payload["url"] = RECORDER.get("url", "")
+    if state == "error":
+        payload["error"] = RECORDER.get("error", "")
+    return JSONResponse(payload)
 
 
 @app.post("/api/spotter-live/append")

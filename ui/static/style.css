@@ -279,23 +279,30 @@ summary { cursor: pointer; font-weight: 750; margin: 8px 0; }
 .block-action { background: #edf5fb; border-color: #c7d9ea; color: #2d6591; }
 .block-action span { background: #3b7fb2; }
 
-/* Keep meeting notes visually natural; color only the short capture marker. */
+/* Keep signals compact and readable instead of treating them as headings or
+   ordinary bulleted prose. Only the short marker receives emphasis. */
 .markdown li.capture-line {
-  margin: 3px 0;
+  margin: 5px 0 5px -18px;
   padding: 0;
   border: 0;
   border-radius: 0;
-  list-style: disc;
-  line-height: inherit;
+  list-style: none;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.45;
 }
 .capture-marker {
-  display: inline;
-  margin-right: 3px;
-  padding: 0;
-  border-radius: 0;
-  background: transparent !important;
-  font-weight: 800;
-  line-height: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 31px;
+  margin-right: 5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background:#f4f7fa;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
 }
 .capture-marker-p { color: #c66060; }
 .capture-marker-o { color: #2e5e8e; }

@@ -2,6 +2,11 @@
 setlocal EnableExtensions
 title Configure SKATE MCP for Codex
 
+rem /quiet is passed by the installer. It suppresses the closing pause so the
+rem post-install step does not leave a console window waiting for a keypress.
+set "SKATE_QUIET="
+if /I "%~1"=="/quiet" set "SKATE_QUIET=1"
+
 set "SKATE_ROOT=%~dp0"
 set "SKATE_MCP_EXE=%SKATE_ROOT%SKATE-MCP.exe"
 set "SKATE_PYTHON=%SKATE_ROOT%.venv\Scripts\python.exe"
@@ -29,10 +34,15 @@ if exist "%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe" set "CODEX_EXE=%LOCALAPPDAT
 if not defined CODEX_EXE for /f "delims=" %%I in ('dir /b /s /a-d "%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe" 2^>nul') do if not defined CODEX_EXE set "CODEX_EXE=%%I"
 if not defined CODEX_EXE for /f "delims=" %%I in ('where codex 2^>nul') do if not defined CODEX_EXE set "CODEX_EXE=%%I"
 if not defined CODEX_EXE (
-    echo Codex CLI was not found on PATH.
-    echo You can still add SKATE from ChatGPT desktop Settings ^> MCP servers.
-    echo See the MCP section in README.md for the exact values.
-    goto :fail
+    rem Not having Codex is a normal state, not a failure. Say so plainly and
+    rem exit 0 so the installer does not report a problem.
+    echo Codex was not found on this computer, so there is nothing to connect.
+    echo SKATE itself is installed and works on its own.
+    echo.
+    echo If you install Codex or ChatGPT desktop later, run this file again
+    echo from the SKATE folder. You can also add SKATE by hand from ChatGPT
+    echo desktop under Settings ^> MCP servers - see README.md for the values.
+    goto :nothing_to_do
 )
 
 echo Replacing any older SKATE MCP registration...
@@ -56,11 +66,19 @@ echo.
 echo SKATE MCP is configured for local Codex clients.
 echo Restart the ChatGPT desktop app, Codex CLI, or IDE extension.
 echo Then type /mcp to confirm that "skate" is connected.
-echo.
-pause
+goto :done
+
+:nothing_to_do
+:done
+if not defined SKATE_QUIET (
+    echo.
+    pause
+)
 exit /b 0
 
 :fail
-echo.
-pause
+if not defined SKATE_QUIET (
+    echo.
+    pause
+)
 exit /b 1

@@ -59,6 +59,7 @@ Write-Host "`n[1/3] Building standalone app (PyInstaller onedir)..." -Foreground
     --collect-submodules pystray `
     --collect-all imageio_ffmpeg `
     --collect-all faster_whisper `
+    --collect-all soundcard `
     --collect-all ctranslate2 `
     --collect-all av `
     --collect-all tokenizers `
