@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% from "_trash_button.html" import trash_button %}
 {% block title %}{{ session.label }}{% endblock %}
 {% block content %}
+{% if request.query_params.get('trashed') == '1' %}<p class="notice">Note moved to Trash. <a href="/trash">Restore from Trash</a></p>{% endif %}
 <section class="pagehead">
   <div><p class="eyebrow">{{ session.status }}</p><h1>{{ session.label }}</h1></div>
   <div class="toolbar">
@@ -11,8 +13,11 @@
       </select>
     </form>
     <a class="button" href="/spotter?session={{ session.key }}&session_label={{ session.label }}"><img class="button-icon" src="/static/icons/spotter.svg" alt="">Spotter</a>
+    <a class="button" href="/session/{{ session.key }}/print" target="_blank" rel="noopener">Print / Save PDF</a>
+    <a class="button recorder-link" href="/spotter-live?session={{ session.key }}#meeting-recorder"><span class="record-dot" aria-hidden="true"></span>Record a Meeting</a>
     <a class="button" href="/lineup?session={{ session.key }}"><img class="button-icon" src="/static/icons/lineup.svg" alt="">Lineup</a>
     <a class="button primary" href="/new?session={{ session.key }}&session_label={{ session.label }}"><img class="button-icon" src="/static/icons/capture.svg" alt="">Capture</a>
+    {{ trash_button('session', session.key, session.label, session.count) }}
   </div>
 </section>
 <section class="session-lineup panel">
@@ -31,7 +36,7 @@
 </section>
 <div class="list">
   {% for entry in entries %}
-    <article class="item"><div><a class="item-title" href="/entry/{{ entry.file_id }}">{{ entry.title }}</a><p>{{ entry.summary }}</p></div><span>{{ entry.type_label }}</span></article>
+    <article class="item session-note"><div class="session-note-body"><a class="item-title" href="/entry/{{ entry.file_id }}">{{ entry.title }}</a><p>{{ entry.summary }}</p></div><div class="session-note-actions"><span>{{ entry.type_label }}</span>{{ trash_button('note', entry.file_id, entry.title, icon_only=true) }}</div></article>
   {% else %}
     <p class="muted">No memory objects in this session yet.</p>
   {% endfor %}

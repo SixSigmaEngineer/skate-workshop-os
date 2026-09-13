@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Trash{% endblock %}
+{% block content %}
+<section class="pagehead">
+  <div><h1>Trash</h1><p class="muted">Removed sessions and notes stay here until you restore them.</p></div>
+  <a class="button" href="/sessions">Back to Sessions</a>
+</section>
+<p class="field-help">Items in Trash are excluded from the Library, Lineup, graphs, and agent retrieval. Their attachments remain in the vault so shared files and restored notes still work.</p>
+<p id="restoreStatus" class="notice" role="status" hidden></p>
+<div class="list">
+  {% for item in trash_items %}
+  <article class="item trash-item">
+    <div><strong>{{ item.title }}</strong><p>{{ item.kind|title }} · {{ item.note_count }} note{{ '' if item.note_count == 1 else 's' }} · Removed {{ item.created_at[:10] }}</p></div>
+    <button type="button" class="button" data-restore-id="{{ item.id }}" aria-label="Restore {{ item.title }}">Restore</button>
+  </article>
+  {% else %}<p class="muted">Trash is empty.</p>{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+<dialog class="trash-dialog" id="trashDialog" aria-labelledby="trashDialogTitle" aria-describedby="trashDialogDescription">
+  <h2 id="trashDialogTitle">Move to Trash?</h2>
+  <p id="trashDialogDescription"></p>
+  <p class="muted">You can restore this from Trash. Attachments stay on this PC.</p>
+  <p id="trashDialogError" class="danger" role="alert" hidden></p>
+  <div class="toolbar">
+    <button type="button" class="button" id="cancelTrash" autofocus>Cancel</button>
+    <button type="button" class="button trash-button" id="confirmTrash"><img class="button-icon" src="/static/icons/trash.svg" alt="">Move to Trash</button>
+  </div>
+</dialog>
+<script src="/static/vault-trash.js?v=20260912" defer></script>

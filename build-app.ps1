@@ -69,6 +69,10 @@ Write-Host "`n[1/3] Building standalone app (PyInstaller onedir)..." -Foreground
     --hidden-import markdown.extensions.extra `
     --hidden-import embeddings `
     --hidden-import skate_lib `
+    --hidden-import note_quality `
+    --hidden-import audio_uploads `
+    --hidden-import ui_themes `
+    --hidden-import vault_trash `
     --add-data "$Root\ui\templates;ui\templates" `
     --add-data "$Root\ui\static;ui\static" `
     $Launcher
@@ -147,6 +151,7 @@ $Seed = Join-Path $AppDir "vault-seed"
 New-Item -ItemType Directory -Force -Path $Seed | Out-Null
 Copy-Item -LiteralPath (Join-Path $Root "demo-vault\conversations") -Destination (Join-Path $Seed "conversations") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $Root "demo-vault\sessions")      -Destination (Join-Path $Seed "sessions") -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $Root "theme-boards") -Destination (Join-Path $Seed "theme-boards") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $Root "demo-vault\INDEX.md")      -Destination (Join-Path $Seed "INDEX.md") -Force
 Copy-Item -LiteralPath (Join-Path $Root "templates")                -Destination (Join-Path $Seed "templates") -Recurse -Force
 

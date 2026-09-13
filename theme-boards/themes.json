@@ -1,0 +1,57 @@
+{
+  "default": {
+    "bg": "#ffffff",
+    "panel": "#ffffff",
+    "ink": "#1d2633",
+    "muted": "#627186",
+    "line": "#dce4ed",
+    "accent": "#2f67a5",
+    "accent-2": "#435f8e",
+    "rail": "#f8fafc",
+    "button-ink": "#ffffff"
+  },
+  "sol": {
+    "bg": "#fffaf1",
+    "panel": "#fffdf8",
+    "ink": "#392c20",
+    "muted": "#75604b",
+    "line": "#e4d4b9",
+    "accent": "#94521c",
+    "accent-2": "#9e671b",
+    "rail": "#f6ecd9",
+    "button-ink": "#ffffff"
+  },
+  "luna": {
+    "bg": "#131e29",
+    "panel": "#1c2b3a",
+    "ink": "#eef1e9",
+    "muted": "#b3c0ca",
+    "line": "#405268",
+    "accent": "#bad1e6",
+    "accent-2": "#e0d1ae",
+    "rail": "#172432",
+    "button-ink": "#152536"
+  },
+  "terra": {
+    "bg": "#f5f6ee",
+    "panel": "#fffef8",
+    "ink": "#24372e",
+    "muted": "#5e7164",
+    "line": "#cbd7c8",
+    "accent": "#366445",
+    "accent-2": "#506c45",
+    "rail": "#eaf0e3",
+    "button-ink": "#ffffff"
+  },
+  "devpost": {
+    "bg": "#081e2b",
+    "panel": "#0e2b3b",
+    "ink": "#e6f5fc",
+    "muted": "#9bbdcc",
+    "line": "#305566",
+    "accent": "#78d9f3",
+    "accent-2": "#a3cde3",
+    "rail": "#0b2533",
+    "button-ink": "#092532"
+  }
+}

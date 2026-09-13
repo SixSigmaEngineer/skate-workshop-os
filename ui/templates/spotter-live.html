@@ -25,14 +25,26 @@
 .agent-log .qa .q { font-weight: 700; }
 .agent-log .qa .a { margin-top: 2px; }
 .file-pill { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }
+.recorder-session-form { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.recorder-session-form[hidden] { display: none; }
+.recorder-session-form label { display: block; max-width: 480px; margin-bottom: 12px; }
 </style>
 
-<section class="panel" style="margin-bottom:16px;">
-  <h3 style="margin-top:0;">Meeting recorder — records what this PC hears</h3>
+<section class="panel" id="meeting-recorder" style="margin-bottom:16px;scroll-margin-top:140px;">
+  <h3 style="margin-top:0;">Record a Meeting</h3>
+  <p><a class="button" href="/about/recording">Recording &amp; transcription guide</a></p>
   <p class="muted">Captures system audio (Teams, Zoom, Meet, Webex — any app) plus your microphone, transcribed fully locally.
-     Runs on the SKATE server, so you can leave this page or minimize SKATE while it records —
-     <strong>but closing the SKATE window stops the server and the recording</strong>.
-     When you stop, the transcript is saved as a note in the chosen session automatically.</p>
+     You can leave this page or minimize SKATE while it records.
+     <strong>With the desktop tray app, closing the SKATE window hides it in the system tray; recording continues.</strong>
+     The tray shows a skateboard when not recording and a red circle during recording. Hover for status; right-click for Open SKATE or Stop recording &amp; save.
+     When you stop, SKATE saves the WAV audio and a transcript note in the chosen session. The note includes an audio download link.</p>
+  <ol class="muted">
+    <li>Play your meeting through the Windows default speakers or headphones.</li>
+    <li>Choose a session below, or select “Create a new session…” to add one. Keep “include my microphone” checked to record your voice too.</li>
+    <li>Select Start recording. When the meeting ends, select Stop &amp; save note.</li>
+    <li>Open the saved note and use Clean/Compress Notes to review the workshop content.</li>
+  </ol>
+  <p class="field-help">Recording and transcription stay on this PC. AI cleanup uses the provider chosen in Settings. Keep SKATE running until the note is saved. Choosing Exit SKATE from the tray menu shuts down the app and stops any recording. If you launched without a tray icon, keep the SKATE window open.</p>
   <div class="toolbar" style="flex-wrap:wrap;gap:12px;align-items:center;">
     <button class="button primary" id="recStartBtn" type="button">
       <img class="button-icon" src="/static/icons/record.svg?v=red1" alt=""><span>Start recording</span>
@@ -40,13 +52,24 @@
     <button class="button" id="recStopBtn" type="button" disabled>Stop &amp; save note</button>
     <label>Session
       <select id="recSession">
-        {% for s in sessions %}<option value="{{ s.key }}" data-label="{{ s.label }}">{{ s.label }}</option>{% endfor %}
+        {% for s in sessions if s.status != 'inactive' %}<option value="{{ s.key }}" data-label="{{ s.label }}">{{ s.label }}</option>{% endfor %}
         <option value="unassigned" data-label="Unassigned">Unassigned</option>
+        <option value="__new__">+ Create a new session…</option>
       </select>
     </label>
     <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="recMic" checked> include my microphone</label>
     <span class="muted" id="recStatus"><span class="live-dot" id="recDot"></span><span id="recStatusText">Idle</span></span>
   </div>
+  <form id="recNewSessionForm" class="recorder-session-form" hidden>
+    <label for="recNewSessionName">New session name
+      <input id="recNewSessionName" name="title" maxlength="120" required placeholder="e.g. September planning meeting" autocomplete="off">
+    </label>
+    <div class="toolbar">
+      <button class="button primary" id="recCreateSessionBtn" type="submit">Create session</button>
+      <button class="button" id="recCancelSessionBtn" type="button">Cancel</button>
+    </div>
+    <p class="muted" id="recNewSessionStatus" role="status"></p>
+  </form>
   <p class="muted" id="recResult" style="margin:8px 0 0;"></p>
 </section>
 
@@ -834,17 +857,85 @@ const recStartBtn = document.getElementById("recStartBtn");
 const recStopBtn = document.getElementById("recStopBtn");
 const recSession = document.getElementById("recSession");
 const recMic = document.getElementById("recMic");
+const requestedRecSession = new URLSearchParams(location.search).get("session");
+if (requestedRecSession && requestedRecSession !== "__new__" && [...recSession.options].some(option => option.value === requestedRecSession)) recSession.value = requestedRecSession;
 const recDot = document.getElementById("recDot");
 const recStatusText = document.getElementById("recStatusText");
 const recResult = document.getElementById("recResult");
 let recTimer = null;
+const recNewSessionForm = document.getElementById("recNewSessionForm");
+const recNewSessionName = document.getElementById("recNewSessionName");
+const recNewSessionStatus = document.getElementById("recNewSessionStatus");
+let previousRecSession = recSession.value;
+let recSessionSaving = false;
+let recCommandPending = false;
+let recState = "idle";
+
+function recUpdateControls() {
+  const busy = recCommandPending || ["recording", "stopping", "transcribing"].includes(recState);
+  recStartBtn.disabled = busy || recSessionSaving || recSession.value === "__new__";
+  recStopBtn.disabled = recCommandPending || recState !== "recording";
+  recSession.disabled = recMic.disabled = busy || recSessionSaving;
+  recNewSessionForm.querySelectorAll("input, button").forEach(control => { control.disabled = busy || recSessionSaving; });
+}
+
+recSession.addEventListener("change", () => {
+  const creating = recSession.value === "__new__";
+  recNewSessionForm.hidden = !creating;
+  recNewSessionStatus.textContent = "";
+  if (creating) recNewSessionName.focus();
+  else previousRecSession = recSession.value;
+  recUpdateControls();
+});
+
+document.getElementById("recCancelSessionBtn").addEventListener("click", () => {
+  recSession.value = previousRecSession;
+  recNewSessionForm.hidden = true;
+  recNewSessionForm.reset();
+  recNewSessionStatus.textContent = "";
+  recUpdateControls();
+  recSession.focus();
+});
+
+recNewSessionForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (recSessionSaving || recCommandPending || ["recording", "stopping", "transcribing"].includes(recState)) return;
+  const title = recNewSessionName.value.trim();
+  if (!title) { recNewSessionStatus.textContent = "Enter a session name."; recNewSessionName.focus(); return; }
+  recSessionSaving = true;
+  recUpdateControls();
+  recNewSessionStatus.textContent = "Creating session…";
+  try {
+    const response = await fetch("/api/sessions", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({title})});
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "The session could not be created.");
+    const session = data.session;
+    let option = [...recSession.options].find(item => item.value === session.key);
+    if (!option) {
+      option = new Option(session.label, session.key);
+      recSession.insertBefore(option, recSession.querySelector('option[value="__new__"]'));
+    }
+    option.dataset.label = session.label;
+    recSession.value = previousRecSession = session.key;
+    recNewSessionForm.hidden = true;
+    recNewSessionForm.reset();
+    const url = new URL(location.href);
+    url.searchParams.set("session", session.key);
+    history.replaceState(null, "", url);
+    recResult.textContent = (data.created ? "Session created" : "Existing session selected") + ": " + session.label + ". Ready to record.";
+  } catch (error) {
+    recNewSessionStatus.textContent = error.message || "The session could not be created. Try again.";
+  } finally {
+    recSessionSaving = false;
+    recUpdateControls();
+    if (recNewSessionForm.hidden) recSession.focus();
+  }
+});
 
 function recRender(status) {
-  const state = status.state || "idle";
+  const state = recState = status.state || "idle";
   recDot.classList.toggle("on", state === "recording");
-  recStartBtn.disabled = state === "recording" || state === "stopping" || state === "transcribing";
-  recStopBtn.disabled = state !== "recording";
-  recSession.disabled = recMic.disabled = state === "recording";
+  recUpdateControls();
   if (state === "recording") {
     const s = status.elapsed || 0;
     const mm = String(Math.floor(s / 60)).padStart(2, "0");
@@ -852,19 +943,30 @@ function recRender(status) {
     recStatusText.textContent = "Recording " + mm + ":" + ss;
     if ((status.warnings || []).length) recResult.textContent = "Warning: " + status.warnings.join("; ");
   } else if (state === "stopping") {
+    recResult.textContent = "Saving the recording…";
     recStatusText.textContent = "Finishing up\u2026";
   } else if (state === "transcribing") {
+    recResult.textContent = status.audio_url ? "Audio saved. Preparing the transcript." : "";
     recStatusText.textContent = "Transcribing\u2026 " + (status.progress || 0) + "%" +
       (status.phase ? " \u00b7 " + status.phase : "");
   } else if (state === "saved") {
     recStatusText.textContent = "Saved";
-    recResult.innerHTML = "Transcript saved as a note: <a href=\"" + status.url + "\">" +
-      status.note + "</a>";
+    recResult.textContent = "Audio and transcript saved. ";
+    const noteLink = document.createElement("a");
+    noteLink.href = status.url;
+    noteLink.textContent = "Open transcript note";
+    recResult.append(noteLink);
   } else if (state === "error") {
     recStatusText.textContent = "Error";
     recResult.textContent = status.error || "Recording failed.";
   } else {
     recStatusText.textContent = "Idle";
+  }
+  if (status.audio_url) {
+    const audioLink = document.createElement("a");
+    audioLink.href = status.audio_url;
+    audioLink.textContent = "Download audio (WAV)";
+    recResult.append(" · ", audioLink);
   }
 }
 
@@ -879,32 +981,31 @@ async function recPoll() {
   } catch (err) { /* server briefly unreachable; next poll retries */ }
 }
 
-recStartBtn.addEventListener("click", async () => {
-  recResult.textContent = "";
-  const option = recSession.selectedOptions[0];
-  const res = await fetch("/api/recorder/start", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      session: recSession.value,
-      session_label: option ? option.dataset.label : "",
-      include_mic: recMic.checked,
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.ok === false) {
-    recResult.textContent = data.error || "Could not start the recorder.";
-    return;
+async function recorderCommand(endpoint, payload) {
+  recCommandPending = true;
+  recUpdateControls();
+  try {
+    const response = await fetch(endpoint, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload || {})});
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || "Recorder request failed.");
+    recResult.textContent = "";
+    await recPoll();
+    if (!recTimer) recTimer = setInterval(recPoll, 2000);
+  } catch (error) {
+    recResult.textContent = error.message || "Could not reach the recorder.";
+    await recPoll();
+  } finally {
+    recCommandPending = false;
+    recUpdateControls();
   }
-  recPoll();
-  if (!recTimer) recTimer = setInterval(recPoll, 2000);
+}
+recStartBtn.addEventListener("click", () => {
+  if (recSession.value === "__new__" || recSessionSaving || recCommandPending) return;
+  recorderCommand("/api/recorder/start", {
+    session: recSession.value, session_label: recSession.selectedOptions[0]?.dataset.label || "", include_mic: recMic.checked,
+  });
 });
-
-recStopBtn.addEventListener("click", async () => {
-  await fetch("/api/recorder/stop", {method: "POST"});
-  recPoll();
-  if (!recTimer) recTimer = setInterval(recPoll, 2000);
-});
+recStopBtn.addEventListener("click", () => recorderCommand("/api/recorder/stop"));
 
 recPoll();
 </script>

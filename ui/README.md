@@ -44,13 +44,15 @@ python app.py
 What happens by default:
 
 1. The web server starts on port 8765
-2. A **skateboard icon appears in your Windows system tray** (notification area, bottom-right near the clock)
-3. Your default browser opens to <http://localhost:8765> automatically
+2. A **skateboard appears in your Windows system tray** (notification area, bottom-right near the clock). It becomes a **red circle only while recording a meeting**. Hover for status, elapsed recording time, or transcription progress.
+3. The SKATE desktop window opens automatically (or your browser if the desktop window is unavailable)
+4. Closing the desktop window hides it in the tray. The server and meeting recorder keep running.
 
-### Tray menu (right-click the skateboard icon)
+### Tray menu (right-click the skateboard or recording icon)
 
-- **Open SKATE** — opens the UI in your browser
-- **Quit** — stops the server and removes the tray icon
+- **Open SKATE** — restores the desktop window, or opens the UI in your browser
+- **Stop recording & save** — enabled during meeting capture; saves WAV audio, then transcribes locally in the background and saves a linked note in the chosen session. Keep SKATE running until the tooltip says **Audio & transcript saved**.
+- **Exit SKATE** — stops the server and any active recording, then removes the tray icon
 
 ### Options
 
@@ -64,7 +66,7 @@ python app.py --host 0.0.0.0    # accessible from other devices on your network
 
 ### Stopping SKATE
 
-- **With tray:** right-click the skateboard → Quit
+- **With tray:** right-click the skateboard or recording icon → Exit SKATE
 - **Without tray (`--no-tray`):** press `Ctrl+C` in the terminal
 
 ## How it works

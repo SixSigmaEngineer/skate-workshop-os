@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ui-theme="{{ ui_theme.id }}" data-ui-dark="{{ 'true' if ui_theme.dark else 'false' }}" style="{{ ui_theme.style }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}SKATE{% endblock %}</title>
   <link rel="icon" href="/favicon.ico?v=2">
-  <link rel="stylesheet" href="/static/style.css?v=20260725-lineup1">
+  <link rel="stylesheet" href="/static/style.css?v=20260912">
+  <link rel="stylesheet" href="/static/themes.css?v=20260913-progress">
 </head>
 <body>
   <header class="topbar">
@@ -50,6 +51,7 @@
         <a href="/">Library</a>
         <a href="/sessions">Sessions</a>
         <a href="/lineup">The Lineup</a>
+        <a href="/spotter-live#meeting-recorder" class="recorder-link"><span class="record-dot" aria-hidden="true"></span><span>Record a Meeting</span></a>
       </div>
       <div class="sidebar-heading"><h3>Sessions</h3><a href="/sessions/new">+</a></div>
       <div class="stack">
@@ -60,6 +62,7 @@
         {% endfor %}
       </div>
       <div class="memory-tree">
+        <a class="sidebar-trash" href="/trash"><img class="button-icon" src="/static/icons/trash.svg" alt="">Trash</a>
         <h3>Object Types</h3>
         {% for key, meta in entry_types.items() %}
           <a class="memory-tree-row" href="{% if key == 'action' %}/lineup{% else %}/grind?entry_type={{ key }}{% endif %}"><span>{{ meta.label }}</span></a>
@@ -77,6 +80,7 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  {% include "_trash_dialog.html" %}
   <script>
   (() => {
     const workspaceTabsKey = "skate-workspace-tabs-v1";
@@ -198,10 +202,18 @@
 
     const key = "skate-ui-zoom";
     const clamp = (value) => Math.max(0.75, Math.min(1.4, value));
+    const sizeViewport = () => {
+      const zoom = Number(document.documentElement.style.getPropertyValue("--app-zoom")) || 1;
+      document.documentElement.style.setProperty("--app-viewport-height", `${window.innerHeight / zoom}px`);
+      document.documentElement.style.setProperty("--app-header-height", `${document.querySelector(".topbar").getBoundingClientRect().height / zoom}px`);
+    };
+    window.addEventListener("resize", sizeViewport);
+    new ResizeObserver(sizeViewport).observe(document.querySelector(".topbar"));
     const apply = (value) => {
       const zoom = clamp(value || 1);
       document.documentElement.style.setProperty("--app-zoom", zoom);
       document.body.style.zoom = zoom;
+      sizeViewport();
       localStorage.setItem(key, String(zoom));
       document.querySelectorAll("[data-zoom-slider]").forEach((slider) => {
         slider.value = String(zoom);

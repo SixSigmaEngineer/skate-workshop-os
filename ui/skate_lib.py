@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import frontmatter
+import note_quality
 
 if not hasattr(frontmatter, "load"):
     class _CompatPost:
@@ -120,6 +121,10 @@ def _candidate_roots() -> list[Path]:
 
 
 def _resolve_skate_root() -> Path:
+    if os.environ.get("SKATE_ROOT"):
+        # An intentionally emptied vault (including after using Trash) must
+        # never switch to another folder just because it still contains notes.
+        return Path(os.environ["SKATE_ROOT"]).resolve()
     candidates = _candidate_roots()
     for root in candidates:
         if _has_entries(root):
@@ -376,6 +381,10 @@ def load_grind_snapshot(session_key: str) -> dict | None:
         return None
     if payload.get("session") != session_key or not isinstance(payload.get("insights"), dict):
         return None
+    # Never return cached evidence from notes that have been moved to Trash.
+    live_ids = {entry.file_id for entry in load_all_entries()}
+    if any(file_id not in live_ids for file_id in payload.get("note_ids", [])):
+        return None
     return payload
 
 
@@ -490,12 +499,8 @@ def filter_entries(
 
     out: list[Entry] = []
     for entry in entries:
-        if session:
-            if session == UNASSIGNED_SESSION:
-                if entry.session:
-                    continue
-            elif entry.session != session:
-                continue
+        if session and entry.session_key != session:
+            continue
         if entry_type and entry.entry_type != entry_type:
             continue
         if date_from and (not entry.date or entry.date < date_from):
@@ -605,7 +610,8 @@ def _note_blocks(entry: Entry, block_type: str) -> list[dict]:
                     "session": entry.session_key,
                 }
             )
-    return blocks
+    focus = " ".join(entry.themes + entry.tags)
+    return [block for block in blocks if not note_quality.off_topic_reason(block["title"], focus)]
 
 
 def capture_markers(entry: Entry) -> dict[str, list[str]]:
@@ -666,7 +672,9 @@ def _pain_score(entry: Entry) -> int:
     pain always ranks first.
     """
     titled = f"{entry.title} {' '.join(entry.tags)}".lower()
-    full = f"{entry.summary} {entry.body}".lower()
+    full = note_quality.screen(f"{entry.summary}\n{entry.body}", " ".join(entry.themes + entry.tags))["text"].lower()
+    if not full:
+        return 0
     score = 0
     for word in PAIN_KEYWORDS:
         if word in titled:

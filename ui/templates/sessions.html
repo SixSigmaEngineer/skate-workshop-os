@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_trash_button.html" import trash_button %}
 {% block title %}Sessions{% endblock %}
 {% block content %}
 <section class="pagehead library-head">
@@ -6,7 +7,7 @@
     <h1>Sessions</h1>
     <p class="muted">Group notes into workshops, interviews, research passes, and readouts.</p>
   </div>
-  <a class="button primary" href="/sessions/new">New session</a>
+  <div class="toolbar"><a class="button" href="/trash"><img class="button-icon" src="/static/icons/trash.svg" alt="">Trash</a><a class="button primary" href="/sessions/new">New session</a></div>
 </section>
 <div class="session-grid">
   {% for row in session_rows %}
@@ -28,6 +29,7 @@
         {% endfor %}
       </div>
       <div class="session-card-actions">
+        {{ trash_button('session', row.key, row.label, row.count, true) }}
         <button
           class="button session-review-button"
           type="button"

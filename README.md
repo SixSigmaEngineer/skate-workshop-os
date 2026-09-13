@@ -30,7 +30,7 @@
   <a href="#">Demo video (link coming with submission)</a>
 </p>
 
-> *You can't vibe code personality.* SKATE keeps the human judgment, context, and lived experience in the room while AI does the work of organizing evidence and turning it into action.
+> *You can't vibe code personality.* SKATE has attitude: skateboard themes, Spotter, The GRIND, and actions you land. Built for the energy of a real workshop, with human judgment at the center.
 
 ---
 
@@ -40,7 +40,7 @@
 |---|---|
 | **Event** | [Orion Global Hackathon 2026](https://orionhackathon.devpost.com/) — Where Operations Research Meets Innovation |
 | **Category** | **Productivity & Enterprise Solutions** |
-| **Release** | v1.1 — adds the app-agnostic meeting recorder, note attachments, bounded AI payloads, and a reproducible benchmark harness |
+| **Current source** | v1.2.0 — September workshop updates; testing continues |
 
 ---
 
@@ -53,6 +53,8 @@ The result is a measurable operations problem: repeated discovery work, decision
 ## The solution
 
 **SKATE is a workshop operating system, not another note-taking app.** It captures natural meeting notes, preserves important signals as typed and linked memory, retrieves a bounded evidence set for AI reasoning, and turns that evidence into a traceable, ranked design-thinking synthesis — from observations to pain points to How-Might-We prompts to concrete solution starters.
+
+Its hybrid memory combines a **typed knowledge graph, optional local vector search, and keyword retrieval**. Graph links explain how evidence connects; vector search finds related meaning. Markdown files remain the source of truth, with local embeddings providing the semantic index. SKATE is free, MIT-licensed software; optional cloud providers bill separately.
 
 ```mermaid
 flowchart LR
@@ -68,11 +70,24 @@ flowchart LR
 
 SKATE treats a workshop as a data-generating process and applies a disciplined pipeline to it:
 
-- **Structured capture** — free-form notes carry compact typed signals (`#O` observation, `#P` pain, `#Q` question, `#A` action) so qualitative data enters the system already classified.
+- **Structured capture** — seven quick-capture markers cover `#P` pain, `#O` observation, `#A` action, `#Q` question, `#S` solution, `#R` recommendation, and `#I` insight. Notes can also use one of 14 object types, including decision and risk.
 - **Governed evidence** — every memory object has YAML metadata, active/inactive status, themes, provenance, and typed relationships (`supports`, `contradicts`, `causes`, `leads_to`, `references`). Analysis runs only on governed, in-scope evidence.
 - **Bounded retrieval instead of brute force** — weighted lexical scoring plus optional local semantic embeddings return a small, ranked Top-K evidence set instead of an entire transcript. Every retrieval number ships with its configuration and a chance baseline, and reproduces from a harness in the repo — see [Measured, not claimed](#measured-not-claimed).
 - **Traceable synthesis** — every generated pain point, How-Might-We prompt, and solution starter links back to its source notes, so decisions keep their evidence chain.
 - **Prioritized output** — the full ranked synthesis exports to Excel for a workshop readout or an improvement backlog.
+
+## New in the 1.2.0 source update
+
+Testing is continuing. These additions are in the source; packaged apps need a new build. Installer downloads are published separately on [GitHub Releases](https://github.com/SixSigmaEngineer/skate-workshop-os/releases).
+
+- **Record a Meeting, keep both files.** Capture PC audio and your microphone, create a session from the recording dropdown, and save a WAV plus a linked transcript note. Audio is saved before transcription, so it remains available if transcription fails.
+- **Recording controls in the tray.** Closing the desktop window hides SKATE while capture continues. A skateboard means not recording; a red circle means recording. Hover for status and elapsed time, or right-click **Stop recording & save**. Keep SKATE running until **Audio & transcript saved** appears.
+- **Long-workshop cleanup with progress.** Review the complete transcript in sections, with up to three concurrent cloud requests and a **Stop cleanup** control. Review or edit the proposal before applying it; the original text is preserved as an attachment. An optional workshop focus helps separate useful evidence from chatter. No AI mode uses local rules and still needs human review.
+- **A graph you can navigate as workshops grow.** All sessions opens with signals collapsed. Browse up to 80 notes per page, then explore a selected note's signals in pages of 40 with type filters. Search reaches every note and signal in scope. Fewer labels and a layout that settles reduce clutter and repeated calculations; the full graph still loads for search.
+- **Recoverable removal and key controls.** Trash icons remove a note or session, and the Trash page restores it. Settings lets you remove saved API keys without replacing them.
+- **Larger imports, readable exports, and personality.** Audio/video imports support 2,048 MB by default, adjustable to 4,096 MB with faster-whisper, and transcribe in ten-minute sections. Print notes or sessions to PDF, choose skateboard themes, and explore the Info page's recording walkthrough and interactive 3D board.
+
+See [September 2026 updates](SEPTEMBER_2026_UPDATES.md) for the full changes, verification, and remaining testing.
 
 ## What works today
 
@@ -82,7 +97,7 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 | Spotter and Spotter Live workshop capture | Working |
 | Live transcription and spoken agent talk-back (OpenAI realtime voice) | Working |
 | Local Whisper and optional ElevenLabs speaker diarization | Working |
-| 2D/3D knowledge graph and Excel export | Working |
+| 2D/3D knowledge graph with paged notes and signal detail; Excel export | Working |
 | GRIND design-thinking synthesis | Working |
 | Choice of AI provider: OpenAI, Anthropic, OpenRouter, local LM Studio, or no AI at all | Working |
 | The Lineup for flexible, session-linked, and recurring Standard Work actions | Working |
@@ -92,6 +107,9 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 | One-click MCP setup for both Codex/ChatGPT desktop and Claude Desktop (classic and Microsoft Store installs) | Working |
 | Windows installer with bundled MCP executable | Working |
 | App-agnostic meeting recorder — records what the PC hears (Teams, Zoom, Meet, Webex, anything), no bot in the call, local transcription | Working |
+| Saved WAV + transcript, recording-status tray icon, and stop-and-save from the tray | Added in 1.2.0 source; desktop testing continues |
+| Reviewed transcript cleanup with progress, cancellation, and original-text attachment | Working |
+| Recoverable note/session Trash, saved API-key removal, and note/session PDF views | Working |
 | Paste (Ctrl+V) or drag screenshots and files into notes, stored in the session folder with a visual gallery | Working |
 | Bounded AI synthesis payload with relevance-based selection over long notes and transcripts | Working |
 | Reproducible retrieval benchmark with analytic chance baselines (`tools/benchmark_retrieval.py`) | Working |
@@ -257,7 +275,13 @@ Spotter helps capture pains, observations, questions, actions, solutions, recomm
 
 ### Meeting recorder — any meeting app, no bot, nothing uploaded
 
-Spotter Live also includes a meeting recorder that captures **what the PC hears**: system audio through WASAPI loopback, optionally mixed with the microphone. Teams, Zoom, Meet, Webex — anything that plays sound — with no bot in the participant list and no calendar or tenant connection. Stop the recording and transcription runs entirely on-device via faster-whisper; the transcript lands in the selected session as a governed note. Phone and field recordings drag-and-drop into a session and are transcribed the same local way. Audio never leaves the computer. (Recording-consent rules still apply — that is policy, not software.)
+Choose **Record a Meeting** in the sidebar or on a session page. Spotter Live captures **what the PC hears** through WASAPI loopback, optionally mixed with the microphone. It works with sound from Teams, Zoom, Meet, Webex, or other apps, with no bot in the participant list and no calendar or tenant connection. Select an existing session or create one in the dropdown before starting.
+
+Stopping saves **both the WAV audio and a markdown transcript note** in that session. The note links to its audio, and Spotter Live offers both links. WAV files live in the session's `attachments` folder and use about 115 MB per hour. Transcription runs on-device through faster-whisper; if it fails, the saved WAV remains available to download and retry.
+
+In the desktop tray app, closing the window hides it while recording continues. The tray shows a skateboard when not recording and a red circle during capture. Hover for recording status or transcription progress. Right-click **Stop recording & save** to finish without reopening the window. **Exit SKATE** closes the application, so wait until audio and transcript are saved before exiting.
+
+For an existing phone or field recording, import the audio/video file through the note editor. Imported files are processed temporarily; keep their originals separately. The PC recorder and imported-file transcription stay local. The separate **Start listening** room-caption feature uses the local or cloud engine selected in Settings and needs Spotter Live to remain open. The Info tab includes a **How to record & transcribe a meeting** walkthrough.
 
 ### Stream Deck Neo control surface
 
@@ -321,6 +345,8 @@ cd skate-workshop-os
 
 Then double-click **`Start SKATE.bat`**. On first run it creates a private `.venv`, installs the required packages, starts the local service, and opens the SKATE native app window. Use **`Stop SKATE.bat`** to stop the local service.
 
+For the desktop tray behavior, close that instance after setup and launch **`Start SKATE.pyw`**. The `.bat` launcher runs without a tray icon, so its window must stay open during recording.
+
 Open **Settings** and choose an AI provider — OpenAI, Anthropic, OpenRouter, a local LM Studio server, or **No AI** for a fully offline experience. An OpenAI key additionally powers live transcription and spoken agent responses; an ElevenLabs key is optional and only needed for speaker diarization. For fully local transcription, run **`Install Local Whisper.bat`** once and restart SKATE.
 
 ### Manual development run
@@ -332,6 +358,10 @@ py -3.13 -m venv .venv
 ```
 
 The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `--browser` only when you intentionally want the browser version.
+
+### Build or update the Windows installer
+
+Run **`Build Installer.bat`** to package the current source as **1.2.0**. It produces `build\installer\SKATE-Setup.exe`. The installer retains SKATE's application identity so it can update an existing installation in place; uninstalling first is normally unnecessary. Finish and save any recording, then exit SKATE before running the installer. Existing notes and settings stay in the user's vault. Installer upgrade and real-device recording checks are still part of the ongoing 1.2.0 testing.
 
 ### Optional services
 
@@ -350,6 +380,7 @@ The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `
 - Markdown and YAML are readable without SKATE and can be versioned, backed up, moved, or inspected with ordinary tools.
 - Uploaded recordings are always transcribed locally — recording audio never leaves this computer. Cloud speech services apply only to Spotter Live's optional realtime captions.
 - The meeting recorder captures what the PC hears locally: no bot joins the call, no calendar or tenant access is requested, and transcription runs on-device via faster-whisper.
+- Stopped meeting recordings retain WAV audio in the session's attachments alongside a linked transcript note. Imported-file processing uses temporary files instead.
 - Note attachments (screenshots, files) are stored in the session folder on the local disk, alongside the notes that reference them.
 - Optional semantic embeddings can run locally and are cached by content hash.
 - The server binds to `127.0.0.1`, not a public network interface by default.
@@ -367,8 +398,8 @@ The local service binds to `127.0.0.1:8765`. Add `--reload` for development or `
 | Retrieval | Weighted lexical scoring, optional FastEmbed or Ollama embeddings |
 | Speech | OpenAI realtime transcription and voice; Local Whisper fallback; optional ElevenLabs diarization |
 | Meeting capture | WASAPI system-audio loopback (`soundcard`) mixed with the microphone; on-device faster-whisper transcription |
-| Visualization | Custom 2D/3D WebGL knowledge graph |
-| Export | Excel workshop synthesis |
+| Visualization | Canvas knowledge graph with 2D/3D views; interactive Three.js board on Info |
+| Export | Excel workshop synthesis; note/session Print / Save PDF |
 | Physical HMI | Elgato Stream Deck Neo and custom microphone housing |
 | Agent access | Official MCP Python SDK; STDIO and Streamable HTTP |
 

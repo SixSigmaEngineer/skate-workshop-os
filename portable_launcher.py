@@ -20,6 +20,7 @@ on startup, so each candidate is now probed and the first usable one wins.
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import sys
 import traceback
@@ -132,13 +133,29 @@ def _seed_vault(root: Path) -> None:
     or replacing any user-created sessions, notes, settings, or files."""
     root.mkdir(parents=True, exist_ok=True)
     seed = EXE_DIR / "vault-seed"
-    for sub in ("conversations", "sessions", "templates", "workshop-knowledge-documents", "models"):
+    removed = set()
+    for manifest_path in (root / ".trash").glob("*/manifest.json"):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("state") in {"pending", "trashed"}:
+                removed.update(path for path in manifest.get("paths", []) if isinstance(path, str))
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+
+    def copy_seed_file(source: str, destination: str) -> str:
+        # A removed demo note must not reappear when the installed app restarts
+        # or updates. Restoring it through Trash makes it available again.
+        if Path(destination).relative_to(root).as_posix() in removed:
+            return destination
+        return _copy_if_missing(source, destination)
+
+    for sub in ("conversations", "sessions", "templates", "workshop-knowledge-documents", "models", "theme-boards"):
         target = root / sub
         source = seed / sub
         if source.exists():
             # Existing vaults may predate the bundled demo. Merge only the
             # missing demo files instead of skipping the entire folder.
-            shutil.copytree(source, target, dirs_exist_ok=True, copy_function=_copy_if_missing)
+            shutil.copytree(source, target, dirs_exist_ok=True, copy_function=copy_seed_file)
         else:
             target.mkdir(parents=True, exist_ok=True)
     for fname in ("INDEX.md", "README.md"):

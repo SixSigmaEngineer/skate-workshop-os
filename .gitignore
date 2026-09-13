@@ -16,6 +16,9 @@ settings.json
 !/sessions/harborlight-service-access-2026/
 !/sessions/harborlight-volunteer-readiness-2026/
 /transcripts/
+/.trash/
+# Recorded audio stays private, including recordings made in a demo session.
+/conversations/**/attachments/recording-*.wav
 /INDEX.md
 
 # User-supplied workshop reference material stays local. Keep only the

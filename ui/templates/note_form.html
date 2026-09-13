@@ -8,6 +8,7 @@
   </div>
   <div class="toolbar">
     <button class="button" type="button" id="compressBtn"><img class="button-icon" src="/static/icons/wand.svg" alt="">Clean/Compress Notes</button>
+    <button class="button" type="button" id="stopCleanupBtn" hidden>Stop cleanup</button>
     <span class="ai-action-progress" id="compressProgress" role="status" aria-live="polite" hidden>
       <span class="ai-action-spinner" aria-hidden="true"></span>
       <span id="compressProgressText">Reading your notes</span>
@@ -120,11 +121,16 @@ contradicts | harborlight-service-access-2026/2026-07-15-hl-shadow-resource-list
     </div>
   </section>
 
+  <label>Workshop focus <span class="muted">(optional)</span>
+    <input id="workshopFocus" name="workshop_focus" placeholder="For example: advisor onboarding and client handoffs">
+    <span class="field-help">Helps distinguish workshop evidence from personal conversation. Cleanup uses the title, themes, and session too.</span>
+  </label>
+  <p><a class="recorder-link" href="/spotter-live#meeting-recorder"><span class="record-dot" aria-hidden="true"></span>Record a Meeting</a> · Capture any meeting app, then save a local transcript.</p>
   <section class="transcription-panel">
     <label class="drop-zone" id="audioDropZone">
       <input id="audioUpload" type="file" accept="audio/*,video/*,.wav,.mp3,.m4a,.webm,.ogg,.mp4,.mov,.mkv,.avi">
       <strong id="audioDropTitle">Drop an audio or video recording here</strong>
-      <span id="audioFileName">Or click to choose a file · mp3, m4a, wav, webm, ogg, mp4, mov, mkv, or avi · 250 MB maximum</span>
+      <span id="audioFileName">Or click to choose a file · mp3, m4a, wav, webm, ogg, mp4, mov, mkv, or avi · {{ settings.recording_upload_limit_mb }} MB maximum</span>
     </label>
     <div class="toolbar">
       <label class="inline-select">Whisper model
@@ -176,6 +182,14 @@ Just start typing — the quick-capture buttons above insert markers wherever yo
     .attach-card span{word-break:break-all;text-align:center;}
   </style>
   <div id="attachGallery" class="attach-gallery" aria-label="Files attached to this note"></div>
+  <section class="cleanup-preview" id="cleanupPreview" hidden>
+    <h2>Review cleaned notes</h2>
+    <p id="cleanupReviewStatus" class="muted" role="status"></p>
+    <label>Proposed notes<textarea id="cleanupText" rows="14"></textarea></label>
+    <details><summary>Excluded from this summary</summary><div id="cleanupExclusions" class="cleanup-exclusions"></div></details>
+    <p class="field-help">Applying saves the original note as a text attachment before replacing the text. Save the note when your review is complete.</p>
+    <div class="toolbar"><button type="button" class="button primary" id="applyCleanup">Use reviewed notes</button><button type="button" class="button" id="cancelCleanup">Keep original</button></div>
+  </section>
   <div id="statusLine" class="muted"></div>
   <button class="button primary" type="submit"><img class="button-icon" src="/static/icons/save.svg" alt="">Save Memory Object</button>
 </form>
@@ -334,49 +348,24 @@ document.getElementById("suggestBtn").addEventListener("click", async () => {
   }
 });
 document.getElementById("compressBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("compressBtn");
-  const progress = document.getElementById("compressProgress");
-  const progressText = document.getElementById("compressProgressText");
-  const elapsed = document.getElementById("compressElapsed");
-  const originalLabel = btn.innerHTML;
-  const startedAt = Date.now();
-  const phases = ["Reading your notes", "Cleaning and condensing", "Organizing signal markers", "Still working with the AI"];
-  const updateProgress = () => {
-    const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-    elapsed.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-    progressText.textContent = phases[Math.min(Math.floor(seconds / 12), phases.length - 1)];
-  };
-  btn.disabled = true;
-  btn.setAttribute("aria-busy", "true");
-  btn.innerHTML = '<img class="button-icon" src="/static/icons/wand.svg" alt="">Working&hellip;';
-  progress.hidden = false;
   statusLine.classList.add("working");
   statusLine.textContent = "Cleaning and compressing notes...";
-  updateProgress();
-  const progressTimer = setInterval(updateProgress, 1000);
   try {
-    const res = await fetch("/api/compress-note", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        title: document.querySelector("[name=title]").value,
-        tags: document.getElementById("tags").value,
-        body: body.value
-      })
+    const sourceAtRequest = body.value;
+    const data = await requestReviewedCleanup("compression", {
+      title: document.querySelector("[name=title]").value,
+      tags: document.getElementById("tags").value,
+      body: sourceAtRequest,
+      focus: document.getElementById("workshopFocus").value,
+      session_label: (sessionSelect.selectedOptions[0]?.textContent || "") + " " + document.getElementById("themes").value
     });
-    const data = await res.json();
-    if (!data.ok) { statusLine.textContent = data.error || "Cleaning failed."; return; }
-    insertIntoBody(data.markdown || "");
-    statusLine.textContent = data.message || "Cleaned notes added — signals will appear in the mind map.";
+    if (body.value !== sourceAtRequest) throw new Error("The note changed during cleanup. Run cleanup again to include your edits.");
+    showCleanupPreview(data);
+    statusLine.textContent = "Review the proposed cleanup below before applying it.";
   } catch (err) {
-    statusLine.textContent = "Cleaning failed: " + err.message;
+    statusLine.textContent = err.message.startsWith("Cleanup stopped") ? err.message : "Cleaning failed: " + err.message;
   } finally {
-    clearInterval(progressTimer);
     statusLine.classList.remove("working");
-    progress.hidden = true;
-    btn.disabled = false;
-    btn.removeAttribute("aria-busy");
-    btn.innerHTML = originalLabel;
   }
 });
 let pendingTranscriptionFile = null;
@@ -396,7 +385,7 @@ function selectedTranscriptText() {
 function refreshSummarizeAvailability() {
   const button = document.getElementById("summarizeTranscriptBtn");
   const hasSelection = Boolean(selectedTranscriptText());
-  button.disabled = !(hasSelection || transcriptText());
+  button.disabled = document.getElementById("compressBtn").disabled || !(hasSelection || transcriptText());
   button.textContent = hasSelection ? "Summarize Selection" : "Summarize Transcript";
 }
 function setRawTranscript(transcript) {
@@ -409,7 +398,7 @@ function setRawTranscript(transcript) {
       break;
     }
   }
-  prefix = prefix.replace(/\n*## AI-Cleaned Meeting Notes[\s\S]*$/m, "").trimEnd();
+  prefix = prefix.replace(/\n*## (?:AI-Cleaned Meeting Notes|Meeting Notes)[\s\S]*$/m, "").trimEnd();
   body.value = `${prefix}\n\n## Raw Transcript\n\n${transcript.trim()}\n`;
   refreshSummarizeAvailability();
   saveDraft();
@@ -425,7 +414,7 @@ function insertCleanTranscriptNotes(markdown) {
   }
   let prefix = body.value.slice(0, index).trimEnd();
   const raw = body.value.slice(index).trimStart();
-  prefix = prefix.replace(/\n*## AI-Cleaned Meeting Notes[\s\S]*$/m, "").trimEnd();
+  prefix = prefix.replace(/\n*## (?:AI-Cleaned Meeting Notes|Meeting Notes)[\s\S]*$/m, "").trimEnd();
   body.value = `${prefix}\n\n${markdown.trim()}\n\n${raw}\n`;
   refreshSummarizeAvailability();
   saveDraft();
@@ -440,8 +429,8 @@ function stageTranscriptionFile(file) {
     transcriptionStatus.dataset.state = "error";
     return;
   }
-  if (file.size > 250 * 1024 * 1024) {
-    transcriptionStatus.textContent = "That file is larger than 250 MB. Compress or split the recording first.";
+  if (file.size > {{ settings.recording_upload_limit_mb }} * 1024 * 1024) {
+    transcriptionStatus.textContent = "That file exceeds the {{ settings.recording_upload_limit_mb }} MB limit. Change it in Settings (up to 4 GB).";
     transcriptionStatus.dataset.state = "error";
     return;
   }
@@ -534,7 +523,7 @@ async function transcribeBlob(blob, filename) {
     return;
   }
   if (blob.size > 250 * 1024 * 1024) {
-    setTranscriptStatus("That file is larger than 250 MB. Compress or split the recording first.", "error");
+    setTranscriptStatus("That file exceeds the {{ settings.recording_upload_limit_mb }} MB limit. Change it in Settings (up to 4 GB).", "error");
     return;
   }
   audioFileName.textContent = `${filename} · ${(blob.size / (1024 * 1024)).toFixed(1)} MB`;
@@ -572,23 +561,12 @@ document.getElementById("summarizeTranscriptBtn").addEventListener("click", asyn
   button.textContent = selectedText ? "Summarizing Selection…" : "Summarizing Transcript…";
   statusLine.textContent = selectedText ? "Summarizing highlighted transcript text..." : "Summarizing transcript...";
   try {
-    const res = await fetch("/api/summarize-transcript", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({title: document.querySelector("[name=title]").value, transcript})
-    });
-    const data = await res.json();
-    if (!data.ok) { statusLine.textContent = data.error || "Transcript summary failed."; return; }
-    insertCleanTranscriptNotes(data.markdown || "");
-    const tags = data.summary && data.summary.tags ? data.summary.tags : [];
-    if (tags.length) {
-      const field = document.getElementById("tags");
-      const existing = field.value.split(",").map((item) => item.trim()).filter(Boolean);
-      tags.forEach((tag) => { if (!existing.includes(tag)) existing.push(tag); });
-      field.value = existing.join(", ");
-      saveDraft();
-    }
-    statusLine.textContent = data.message || (selectedText ? "Selection summary added." : "Transcript summary added.");
+    const sourceAtRequest = body.value;
+    const selectionAtRequest = selectedText ? {start: body.selectionStart, end: body.selectionEnd} : null;
+    const data = await requestReviewedCleanup("summary", {title: document.querySelector("[name=title]").value, transcript, focus: document.getElementById("workshopFocus").value, session_label: (sessionSelect.selectedOptions[0]?.textContent || "") + " " + document.getElementById("themes").value});
+    if (body.value !== sourceAtRequest) throw new Error("The note changed during summarization. Try again to include your edits.");
+    showCleanupPreview(data, selectionAtRequest);
+    statusLine.textContent = "Review the proposed notes below before applying them.";
   } catch (error) {
     statusLine.textContent = error && error.message ? error.message : "Transcript summary failed.";
   } finally {
@@ -622,7 +600,7 @@ fetch("/api/transcription-health")
   .then((health) => {
     const indicator = document.getElementById("transcriptionStatus");
     if (!health.whisper && health.frozen) {
-      indicator.textContent = "Local Whisper is available when running SKATE from source. In the installed app, set Speech to text to OpenAI or ElevenLabs in Settings to transcribe recordings.";
+      indicator.textContent = "Local Whisper is not available in this installation. Update or reopen SKATE to install the local transcription engine.";
       indicator.dataset.state = "error";
     } else if (!health.whisper) {
       indicator.textContent = "Local Whisper is not installed. Run Install Local Whisper.bat once, then restart SKATE.";
@@ -805,4 +783,5 @@ attachInput.addEventListener("change", () => {
   attachInput.value = "";
 });
 </script>
+<script src="/static/note-cleanup.js?v=20260913-progress"></script>
 {% endblock %}

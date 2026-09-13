@@ -1,5 +1,5 @@
 #define MyAppName "SKATE"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "NeraTech LLC"
 #define MyAppExeName "SKATE.exe"
 

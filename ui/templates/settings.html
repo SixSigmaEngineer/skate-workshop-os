@@ -5,6 +5,33 @@
 {% if saved %}<p class="notice">Settings saved.</p>{% endif %}
 <form method="post" action="/settings" class="form settings-form">
   <section class="settings-section">
+    <h2>Appearance</h2>
+    <p class="muted">Choose a skateboard to preview its colors. Save Settings to use this style throughout SKATE.</p>
+    <input type="hidden" name="ui_theme" id="uiTheme" value="{{ current_settings.ui_theme }}">
+    <details class="theme-picker" id="themePicker">
+      <summary aria-label="Choose a UI style"><img id="themeImage" src="{{ ui_theme.image }}" alt="{{ ui_theme.label }} skateboard"><strong id="themeName">{{ ui_theme.label }}</strong></summary>
+      <div class="theme-options" aria-label="Skateboard styles">
+        {% for theme in ui_themes %}
+        <button class="theme-option" type="button" data-theme-choice='{{ theme | tojson }}' aria-pressed="{{ 'true' if theme.id == ui_theme.id else 'false' }}">
+          <img src="{{ theme.image }}" alt="{{ theme.label }} skateboard"><span>{{ theme.label }}</span>
+        </button>
+        {% endfor %}
+      </div>
+    </details>
+    <p class="field-help">Replace the PNG boards in <code>{{ theme_boards_path }}</code>. Keep the filenames. Edit <code>themes.json</code> to match a new board's colors, then reload.</p>
+    <button class="button" type="button" id="openThemeFolder">Open board folder</button>
+    <span class="muted" id="themeFolderStatus" role="status"></span>
+  </section>
+  <section class="settings-section">
+    <h2>Recordings and note cleanup</h2>
+    <label>Maximum recording upload (MB)
+      <input name="recording_upload_limit_mb" type="number" min="250" max="4096" step="1" value="{{ current_settings.recording_upload_limit_mb }}">
+    </label>
+    <p class="field-help">Default: 2,048 MB (2 GB). Maximum: 4,096 MB (4 GB). Uploads use temporary disk space. Long recordings take longer to transcribe. This limit protects disk space and workload; it is not a cloud service limit.</p>
+    <p class="muted">Cleanup screens the complete note, removes clear social chatter, and keeps uncertain content for review. AI writing uses short sentences and consistent terms while preserving quotes and commitments.</p>
+    <a class="button recorder-link" href="/spotter-live#meeting-recorder"><span class="record-dot" aria-hidden="true"></span>Record a Meeting</a>
+  </section>
+  <section class="settings-section">
     <h2>General AI / API</h2>
     <label>AI provider
       <select name="provider" id="llmProvider">
@@ -16,6 +43,7 @@
       </select>
     </label>
     <p class="muted">Choose how SKATE reasons. <strong>No AI</strong> keeps every feature that doesn't need a model — capture, governance, retrieval, graphs, exports, and a deterministic local synthesis. <strong>LM Studio</strong> keeps reasoning fully on this computer. Cloud providers trade privacy for stronger synthesis.</p>
+    <p><a href="#savedApiKeys">Manage or remove saved API keys</a></p>
 
     <div class="provider-block" data-provider="none">
       <p class="muted">Nothing to configure. GRIND and Spotter fall back to SKATE's built-in local synthesis; no workshop content ever leaves this computer.</p>
@@ -58,7 +86,6 @@
           <input name="anthropic_api_key" type="password" placeholder="{% if current_settings.api_key_present['anthropic'] %}Saved{% else %}Not saved{% endif %}">
         </label>
       </div>
-      <label><input type="checkbox" name="clear_anthropic_api_key"> Clear saved Anthropic key</label>
     </div>
 
     <div class="provider-block" data-provider="openrouter">
@@ -68,7 +95,6 @@
           <input name="openrouter_api_key" type="password" placeholder="{% if current_settings.api_key_present['openrouter'] %}Saved{% else %}Not saved{% endif %}">
         </label>
       </div>
-      <label><input type="checkbox" name="clear_openrouter_api_key"> Clear saved OpenRouter key</label>
       <p class="muted">Any model on openrouter.ai works — Claude, GPT, Gemini, Llama, Mistral, and more — with one key.</p>
     </div>
 
@@ -96,6 +122,21 @@
         sync();
       })();
     </script>
+  </section>
+
+  <section class="settings-section" id="savedApiKeys">
+    <h2>Saved API keys</h2>
+    <p class="muted">Select a key to remove, then choose Save Settings. These controls stay available when you choose No AI. Leaving an API key field blank keeps the saved key.</p>
+    <div class="saved-key-list">
+      {% for provider, label in [('openai', 'OpenAI'), ('anthropic', 'Anthropic'), ('openrouter', 'OpenRouter'), ('elevenlabs', 'ElevenLabs')] %}
+      <div class="saved-key-row">
+        <div><strong>{{ label }}</strong><span class="muted">{{ 'Saved' if current_settings.api_key_present[provider] else 'Not saved' }}</span></div>
+        <label><input type="checkbox" name="clear_{{ provider }}_api_key" {% if not current_settings.api_key_present[provider] %}disabled{% endif %}> Remove saved {{ label }} key</label>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="field-help">Removing the OpenAI key also disconnects OpenAI voice and live captions until you add a key again.</p>
+    <button class="button" type="submit">Save Settings</button>
   </section>
 
   <section class="settings-section">
@@ -223,7 +264,6 @@
       <label>ElevenLabs API key
         <input name="elevenlabs_api_key" type="password" placeholder="{% if current_settings.api_key_present['elevenlabs'] %}Saved{% else %}Not saved{% endif %}">
       </label>
-      <label><input type="checkbox" name="clear_elevenlabs_api_key"> Clear saved ElevenLabs key</label>
       <div class="two">
         <label>Voice
           <div class="voice-picker" id="elVoicePicker">
@@ -634,4 +674,5 @@
 })();
 </script>
 
+<script src="/static/theme-picker.js?v=20260912"></script>
 {% endblock %}

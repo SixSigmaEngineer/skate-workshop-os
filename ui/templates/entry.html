@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_trash_button.html" import trash_button %}
 {% block title %}{{ entry.title }}{% endblock %}
 {% block content %}
 <section class="pagehead">
@@ -6,7 +7,9 @@
     <p class="eyebrow">{{ entry.type_label }}{% if entry.session %} / {{ entry.session_display }}{% endif %}</p>
     <h1>{{ entry.title }}</h1>
   </div>
+  <div class="toolbar"><button class="button" type="button" onclick="window.print()">Print / Save PDF</button>
   <a class="button" href="/edit/{{ entry.file_id }}"><img class="button-icon" src="/static/icons/edit.svg" alt="">Edit</a>
+  {{ trash_button('note', entry.file_id, entry.title) }}</div>
 </section>
 
 <div class="meta">

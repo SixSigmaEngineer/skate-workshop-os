@@ -1,0 +1,3 @@
+{% macro trash_button(kind, key, label, count=1, icon_only=false) -%}
+<button type="button" class="button trash-button{% if icon_only %} icon-only{% endif %}" data-trash-kind="{{ kind }}" data-trash-key="{{ key }}" data-trash-label="{{ label }}" data-trash-count="{{ count }}" title="Move {{ label }} to Trash" aria-label="Move {{ label }} to Trash"><img class="button-icon" src="/static/icons/trash.svg" alt="">{% if not icon_only %}Trash{% endif %}</button>
+{%- endmacro %}

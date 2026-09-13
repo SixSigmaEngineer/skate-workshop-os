@@ -1,11 +1,50 @@
 {% extends "base.html" %}
 {% block title %}About SKATE{% endblock %}
 {% block content %}
+{% set board_images = {} %}
+{% for board in ui_themes %}{% set _ = board_images.update({board.id: board.image}) %}{% endfor %}
 <section class="about-skate" aria-label="About SKATE">
+  <header class="about-hero about-intro">
+    <div>
+      <p class="eyebrow">Workshop software with attitude</p>
+      <h1><em>You Can’t Vibe Code Personality.</em></h1>
+      <p class="about-hero-lead">SKATE has attitude. In a world full of vibe-coded apps, it has a style of its own: custom decks, bold colors, Spotter in your corner, and actions you can mark <em>Landed</em>. Serious work deserves software with some life in it.</p>
+      <p class="about-hero-signoff">The personality is intentional. So is the engineering.</p>
+      <div class="toolbar about-actions">
+        <a class="button primary" href="/about/recording">How to record &amp; transcribe a meeting</a>
+      </div>
+    </div>
+    <section class="about-skatepark" aria-label="SKATE mini skatepark" data-board-script="/static/skateboards/site-board-3d.js?v=20260912">
+      <div class="park-heading"><h2>A little airtime.</h2><span>Built to SKATE</span></div>
+      <div class="park-stage" aria-hidden="true">
+        <div class="park-floor"></div>
+        <div class="park-shadow"></div>
+        <div class="rail-board"><img src="/static/skateboards/site-board.png" alt="" draggable="false"></div>
+        <div class="park-stops"><span>Capture</span><span>Connect</span><span>Land</span></div>
+      </div>
+      <div class="toolbar park-controls" hidden>
+        <button class="button" type="button" data-trick="ollie">Ollie</button>
+        <button class="button" type="button" data-trick="kickflip">Kickflip</button>
+        <button class="button" type="button" data-motion-toggle>Pause motion</button>
+      </div>
+      <p class="park-status" role="status" aria-live="polite">The site’s skateboard, right at home in SKATE.</p>
+    </section>
+  </header>
+
+  <dl class="about-facts" aria-label="SKATE at a glance">
+    <div>
+      <dt>{{ capture_marker_labels|length }} quick-capture signals</dt>
+      <dd>{% for code, label in capture_marker_labels.items() %}<code>#{{ code }}</code> {{ label|lower }}{% if not loop.last %} · {% endif %}{% endfor %}. Organize your notes with {{ entry_types|length }} note types.</dd>
+    </div>
+    <div><dt>3 memory layers</dt><dd>Typed graph connections, optional vector search, and exact keyword matching. Find the meaning and inspect the links.</dd></div>
+    <div><dt>No SKATE subscription</dt><dd>Free MIT-licensed software. Local recording and the core workflow work without an AI account.</dd></div>
+    <div><dt>9 / 10 top results</dt><dd>A relevant note ranked first in nine of ten queries in the small internal demo-vault test. <a href="#retrieval-benchmark">Method and limits</a>.</dd></div>
+  </dl>
+
   <aside class="skateboard-rail" aria-label="Custom SKATE boards">
     <img class="skateboard-card skateboard-feature" src="/static/skateboards/deck-landscape.png" alt="SKATE mountain deck">
-    <img class="skateboard-card skateboard-art skateboard-logo-art" src="/static/skateboards/skate-logo-board.png" alt="SKATE logo board">
-    <img class="skateboard-card skateboard-art" src="/static/skateboards/luna.png" alt="Luna GPT-5.6 board">
+    <img class="skateboard-card skateboard-art skateboard-logo-art" src="{{ board_images.default }}" alt="SKATE logo board">
+    <img class="skateboard-card skateboard-art" src="{{ board_images.luna }}" alt="Luna board">
     <img class="skateboard-card" src="/static/skateboards/local-first.svg" alt="Local first">
     <img class="skateboard-card" src="/static/skateboards/graph.svg" alt="Memory graph">
     <img class="skateboard-card" src="/static/skateboards/observe-connect.svg" alt="Observe connect">
@@ -13,59 +52,108 @@
   </aside>
 
   <article class="about-card markdown">
-    <header class="about-hero">
-      <p class="eyebrow">About SKATE</p>
-      <h1><em>You Can’t Vibe Code Personality.</em></h1>
-      <p class="about-hero-lead">Software can be generated. Trust, judgment, curiosity, and the way a great facilitator reads a room cannot. SKATE preserves that human context—then gives it structure, memory, and momentum.</p>
-    </header>
+    <h2>A workshop operating system</h2>
+    <p><strong>Capture the conversation. Connect the evidence. Land the next move.</strong></p>
+    <p>SKATE stands for <em>Scalable Knowledge Architecture &amp; Technology Engine</em>. It brings meeting capture, workshop coaching, connected knowledge, and follow-through into one local workspace. A recording starts the story. SKATE helps carry it into the next decision, the next workshop, and the work that follows.</p>
 
-    <h2>Core idea</h2>
-    <p><strong>SKATE turns markdown into memory.</strong></p>
-    <p>SKATE, <em>Scalable Knowledge Architecture &amp; Technology Engine</em>, is a local-first memory and workshop-synthesis system. Every note is a plain markdown file with structured metadata — readable by you, searchable by the app, traversable in the mind map, and available as grounded context for SKATE’s agents. No database and no proprietary note format: the vault is a folder on your disk that you can open in any text editor (including Obsidian) or commit to Git.</p>
+    <h2>Hybrid knowledge graph + vector search</h2>
+    <p><strong>SKATE combines explicit relationships, semantic meaning, and exact terms.</strong> Each gives you a different way to find and understand the evidence.</p>
+    <dl class="about-memory-layers">
+      <div>
+        <dt>Knowledge graph</dt>
+        <dd>Preserves named links between notes: <em>supports</em>, <em>contradicts</em>, <em>causes</em>, and <em>leads to</em>, alongside references, similarity links, and shared themes. The GRIND makes those connections visible in 2D and 3D.</dd>
+      </div>
+      <div>
+        <dt>Vector memory</dt>
+        <dd>Stores note embeddings locally and retrieves by meaning when an embedding backend is available. A question about “pricing” can find evidence written as “cost,” even when the wording differs.</dd>
+      </div>
+      <div>
+        <dt>Keyword precision</dt>
+        <dd>Keeps names, project terms, and exact wording in the search. It also keeps retrieval working when embeddings are unavailable.</dd>
+      </div>
+    </dl>
+    <p>Your notes remain readable, portable markdown. Vector search finds related meaning; the graph preserves stated relationships you can inspect. “Similar to” and “contradicts” tell you different things about a finding.</p>
+    <details class="about-details">
+      <summary>Inside the hybrid memory</summary>
+      <p>SKATE keeps a rebuildable, content-hashed vector cache on disk and calculates cosine similarity over those embeddings. This supplies the vector-search layer without a separate vector database server. When embeddings are available, retrieval blends <strong>60% semantic similarity with 40% normalized keyword scoring</strong>.</p>
+      <p>Local Ollama with <code>nomic-embed-text</code> and local <code>fastembed</code> can be detected automatically. OpenAI embeddings require an explicitly selected backend and credentials. Without an embedding backend, retrieval uses keywords. Agents can retrieve bounded sets of relevant note summaries and trace explicit graph links back to evidence.</p>
+    </details>
 
-    <h2>How it works</h2>
-    <p><strong>Capture → Tag → Connect → Synthesize.</strong> Manual notes and meeting transcripts preserve what happened; Spotter uses that session memory to support the facilitator. A note can use one of 14 object types, including observation, pain, insight, decision, quote, question, action item, and recommendation. Notes can also carry themes, a workshop session, and <em>typed relationships</em> to other notes: supports, contradicts, causes, leads_to, references, and similar_to. The Grind builds a graph from those links, and a session-scoped synthesis pass produces design-thinking outputs — top pain points, How-Might-We prompts, and solution starters — exportable to Excel.</p>
+    <h2>Small context. Sources intact.</h2>
+    <p><strong>Give your agent the evidence that fits the question.</strong> SKATE’s MCP connection returns a bounded set of note summaries with source references. You can open a source for more detail or trace its relationships. The notes remain readable files in your vault, ready for the next workshop or a different agent.</p>
+    <p><strong>Keep the trail behind the recommendation.</strong> A pain can link to the observations supporting it, a conflicting finding, and the action it led to. Six weeks later, the team can inspect why it made that decision. Semantic similarity helps find related notes; named graph relationships record how those notes connect.</p>
+    <p>MCP agents can add notes and sessions with provenance. They have no tools to overwrite or delete existing notes. Session scope and active status control which evidence appears in governed retrieval. You retain the original records and review the work in SKATE.</p>
 
-    <h2>The Lineup</h2>
-    <p><strong>The Lineup turns captured action into visible follow-through.</strong> Action Items can be flexible or tied to a workshop session, assigned an owner and due date, and checked off as <em>Landed</em>. Daily, weekday, weekly, and monthly Standard Work returns on a predictable cadence. SKATE also finds <code>#A</code> bullets inside ordinary notes and lets you promote them into trackable Action Items while preserving a relationship back to the source note.</p>
+    <h2>Human factors built into the workflow</h2>
+    <p>SKATE is designed around the person doing the thinking. Cognitive psychology and human factors inform how you capture, review, and recall evidence, so you can keep your attention on the room and the decisions ahead.</p>
+    <div class="about-principles">
+      <section>
+        <h3>Chunk the signal</h3>
+        <p>Working memory is limited. Short markers such as <code>#O</code> for observation, <code>#P</code> for pain, <code>#Q</code> for question, and <code>#A</code> for action group a conversation into meaningful units. The design draws on <a href="https://doi.org/10.1017/S0140525X01003922" target="_blank" rel="noopener">Cowan’s work on working-memory capacity</a>.</p>
+      </section>
+      <section>
+        <h3>Think at capture</h3>
+        <p>Marking a finding as a pain or decision asks you to consider its meaning while the context is fresh. This reflects the <a href="https://doi.org/10.1016/S0022-5371(72)80001-X" target="_blank" rel="noopener">levels-of-processing framework</a> and preserves your interpretation alongside the evidence.</p>
+      </section>
+      <section>
+        <h3>Reduce the search burden</h3>
+        <p>Clear labels, visible relationships, and reviewed cleanup help you find the material that matters. The application of <a href="https://doi.org/10.1207/s15516709cog1202_4" target="_blank" rel="noopener">cognitive-load theory</a> is practical: spend less attention sorting material and more understanding it.</p>
+      </section>
+      <section>
+        <h3>Give people the judgment</h3>
+        <p>You decide what matters and review what gets kept. SKATE stores, searches, and connects it. The GRIND proposes outputs with evidence to check; The Lineup gives the resulting actions owners, due dates, and a place in the next day’s work.</p>
+      </section>
+    </div>
+    <p><strong>The neuroscience connection is deliberate resource allocation.</strong> A <a href="https://research.gatech.edu/node/48331" target="_blank" rel="noopener">2026 Georgia Tech–Cornell study</a> examined how different brain wiring systems expand and contract across species under resource constraints. SKATE takes a design analogy from that work: allocate limited attention and model context to the evidence the task needs. The study investigated brain architecture; SKATE’s benefits require their own measurements.</p>
+    <p>AI context needs care, too. <a href="https://arxiv.org/abs/2307.03172" target="_blank" rel="noopener">Lost in the Middle</a> and <a href="https://arxiv.org/abs/2502.05167" target="_blank" rel="noopener">NoLiMa</a> found weaknesses in the long-context tasks they tested. SKATE addresses that practical problem with bounded evidence retrieval and cleanup you review before applying.</p>
 
-    <h2>The memory tech (and why it holds up)</h2>
-    <p>Retrieval is <strong>hybrid</strong>: 60% semantic embedding similarity blended with 40% normalized keyword scoring when embeddings are available. The semantic side retrieves by meaning — a question about “pricing” can find notes about “cost” — using an optional backend auto-detected at runtime: local <a href="https://ollama.com">Ollama</a> with <code>nomic-embed-text</code>, local <code>fastembed</code>, or OpenAI embeddings when an OpenAI key is configured. The keyword side keeps exact-match precision for names and project terminology. If no embedding backend is available, SKATE degrades gracefully to keyword-only retrieval.</p>
-    <p>Embeddings are cached on disk by content hash, so unchanged notes do not need to be embedded again. There is deliberately <strong>no vector database</strong>: retrieval calculates similarity over the locally cached vectors. Prompts stay <strong>token-bounded</strong> — agents receive a limited set of the most relevant note summaries rather than the entire vault.</p>
-    <p>Unlike agent-memory frameworks built on opaque vector stores, SKATE's memory is <strong>human-readable and human-curated</strong> — a vault you can read, edit, and hand to a client.</p>
-
-    <h2>The mind map (The Grind)</h2>
-    <p>The Grind is a force-directed 3D/2D graph rendered with a hand-written WebGL engine. Every note is a node, colored by its object type (pains red, insights purple, recommendations green, and so on). Two kinds of rails connect them: <strong>relationship rails</strong> — the explicit typed links stored in each note’s metadata — and <strong>theme rails</strong>, which connect notes that share a theme. Degree caps keep highly reused themes from overwhelming the map. A physics layout pulls connected notes together and pushes unrelated ones apart, making clusters useful signals for a facilitator to investigate. Inspect nodes, filter the rails or session, then run the synthesis pass to produce pain points, How-Might-We prompts, and solution starters grounded in the selected session’s active notes.</p>
-
-    <h2>Voice and transcription</h2>
-    <p>When you start listening, Spotter Live captures the selected microphone and writes a timestamped markdown transcript. The primary cloud path uses <strong>OpenAI GPT-Realtime Whisper</strong> for streaming captions and <strong>GPT-Realtime mini</strong> for Spotter’s spoken responses, using the same OpenAI key as the rest of SKATE. Choose <strong>Local Whisper</strong> when audio must remain on this computer, or optional <strong>ElevenLabs Scribe</strong> when speaker diarization is required. Local Whisper and OpenAI Realtime do not identify speakers; ElevenLabs can display speaker labels when the service returns them. SKATE’s local server is bound to <code>127.0.0.1</code>, and API credentials remain on the Python side of the desktop application rather than entering page JavaScript.</p>
-
-    <h2>How SKATE is built</h2>
-    <p>SKATE was created for <strong>OrionHackathon 2026 on Devpost</strong> in the <strong>Productivity &amp; Enterprise Solutions</strong> track. AI-assisted development served as an active engineering partner throughout the build: translating the product vision into a working application, shaping the local-first architecture, implementing and debugging features, refining the interface, generating realistic demonstration data, and helping test the complete workflow.</p>
-    <p>SKATE is vendor-agnostic. <strong>The GRIND uses the AI provider and model selected in Settings</strong> — OpenAI GPT-5.6, Anthropic Claude, any model through OpenRouter, a local LLM through LM Studio, or no AI at all with deterministic local synthesis — for its evidence-heavy task: reading active workshop evidence, finding patterns and tensions, and producing traceable pain points, How-Might-We framing, and solution starters. <strong>With OpenAI selected, Spotter can use a separate, lower-latency GPT-5.6 configuration</strong> for responsive workshop coaching.</p>
-    <p>This application is a direct output of that human-and-agent collaboration. AI accelerated the distance from idea to implementation; the purpose, facilitation philosophy, product judgment, and commitment to helping people and organizations came from its creator. That is the meaning behind the headline: <em>you can’t vibe code personality.</em></p>
-
-    <h2>The stack</h2>
+    <h2>Where SKATE earns its edge</h2>
+    <p><strong>Free and open source under the MIT license.</strong> Local recording, transcription, and the core workshop workflow require no SKATE subscription. Optional cloud AI services use your provider account and may charge for usage. <a href="/about/recording#comparison">See how SKATE compares with Granola</a>.</p>
+    <p><strong>The advantage is the complete workshop loop.</strong> Record the conversation, identify the signal, connect supporting and conflicting evidence, and carry a recommendation into an action with its source intact.</p>
     <ul>
-      <li><strong>Python + FastAPI + pywebview:</strong> local application server inside a native desktop window</li>
-      <li><strong>Markdown vault:</strong> durable, portable, Obsidian-compatible storage</li>
-      <li><strong>Hybrid retrieval:</strong> local embeddings (Ollama / fastembed) + weighted keyword scoring, disk-cached</li>
-      <li><strong>Hand-written WebGL:</strong> The Grind's 3D graph renderer — no framework, no build step</li>
-      <li><strong>SKATE boards:</strong> customizable visual signals for the team</li>
+      <li><strong>Defensible recommendations:</strong> follow relationships from an action or decision through the pains and observations behind it.</li>
+      <li><strong>Continuity between workshops:</strong> organize notes by session and engagement. Retire inactive sessions from scoped GRIND and agent retrieval while keeping their records.</li>
+      <li><strong>Control over your knowledge:</strong> local recording and transcription, portable markdown, selectable AI providers, and a core workflow that works without AI.</li>
+      <li><strong>Visible follow-through:</strong> promote an action into The Lineup, assign an owner and due date, mark it <em>Landed</em>, and use recurring Standard Work for the habits that need to stick.</li>
     </ul>
+    <details class="about-details" id="retrieval-benchmark">
+      <summary>Measured retrieval performance</summary>
+      <p><strong>A relevant note ranked first for 9 of 10 queries</strong> in SKATE’s internal demo-vault benchmark, rerun in September 2026. That was about <strong>4.2× the expected chance baseline</strong> for those queries.</p>
+      <p>The test used 25 active notes across two sessions, 10 author-labelled queries, and keyword-only retrieval. Mean reciprocal rank was 0.95; the exact 95% confidence interval for the top-result hit rate was 55.5–99.7%. Five-result payloads averaged about 2,200 tokens, estimated from character count.</p>
+      <p>This is a small internal retrieval check. It does not establish superiority over competitors or measure cognitive benefits for users. Those claims need controlled comparisons of accuracy, workload, and adoption. The reproducible benchmark is included at <code>tools/benchmark_retrieval.py</code>.</p>
+    </details>
 
-    <h2>Skateboards</h2>
-    <p>The boards on this page live in <code>SKATE/ui/static/skateboards</code>. Replace the files there to customize the look. Every developer can make one and drop it into the rail without changing the rest of SKATE.</p>
+    <h2>What you can do today</h2>
+    <ul>
+      <li><strong>Record a Meeting:</strong> capture PC audio and your microphone locally from Spotter Live, then save both WAV audio and a linked transcript note. Create a session in the recording dropdown. Closing the desktop window hides it while recording continues. The tray switches from a skateboard to a red circle during recording; hover for status or right-click to stop and save.</li>
+      <li><strong>Bring your recordings:</strong> import audio or video, with configurable uploads up to 4 GB and local transcription in chunks.</li>
+      <li><strong>Clean with control:</strong> review and edit proposed note cleanup before applying it, see excluded chatter, and keep the original transcript attached.</li>
+      <li><strong>Work with Spotter:</strong> get coaching grounded in the session and microphone captions using a selected local or cloud transcription option.</li>
+      <li><strong>Run The GRIND:</strong> explore the graph in 2D or 3D and synthesize session evidence into pain points, How-Might-We prompts, and solution starters. Export synthesis to Excel, save notes, and print a note or session to PDF.</li>
+      <li><strong>Connect your agents:</strong> the MCP connection provides bounded memory retrieval, evidence tracing, and additive notes and sessions with agent provenance.</li>
+    </ul>
+    <p>The core note, graph, keyword-search, and local synthesis workflow works without AI. PC recording and upload transcription stay local. When you choose cloud AI or cloud live captions, the relevant text or audio goes to that provider.</p>
+
+    <h2>Make it your SKATE</h2>
+    <p>Choose a deck in <strong>Settings → Appearance</strong>: SKATE Original, Sol, Luna, Terra, or Devpost Deep Blue. Replace board photos and adjust their palettes through the board folder. The side rails here use that same collection, so your custom artwork belongs on the Info page too. The mini skatepark brings the site’s Aberdeen board into the app.</p>
+    <p>Spotter’s voice and coaching style, the decks, The GRIND, The Lineup, and your Skater progress give the app its character. The language carries through to the work: capture a signal, connect the rails, land an action.</p>
+    <p>Created for <strong>OrionHackathon 2026 on Devpost</strong>, SKATE grew through human-led, AI-assisted development. Its personality comes from deliberate product choices: what it looks like, how it speaks, and how it feels to make progress. <strong>Serious work. With attitude.</strong></p>
+    <div class="toolbar about-actions">
+      <a class="button primary" href="/spotter-live#meeting-recorder"><span class="record-dot" aria-hidden="true"></span> Record a Meeting</a>
+      <a class="button" href="/grind">Explore The GRIND</a>
+      <a class="button" href="/lineup">Open The Lineup</a>
+    </div>
   </article>
 
   <aside class="skateboard-rail" aria-label="Custom SKATE boards">
-    <img class="skateboard-card skateboard-art" src="/static/skateboards/devpost.png" alt="Devpost Build Hack Ship board">
-    <img class="skateboard-card skateboard-art" src="/static/skateboards/sol.png" alt="Sol GPT-5.6 board">
-    <img class="skateboard-card skateboard-art" src="/static/skateboards/terra.png" alt="Terra GPT-5.6 board">
+    <img class="skateboard-card skateboard-art" src="{{ board_images.devpost }}" alt="Devpost Build Hack Ship board">
+    <img class="skateboard-card skateboard-art" src="{{ board_images.sol }}" alt="Sol board">
+    <img class="skateboard-card skateboard-art" src="{{ board_images.terra }}" alt="Terra board">
     <img class="skateboard-card" src="/static/skateboards/grind.svg" alt="GRIND">
     <img class="skateboard-card" src="/static/skateboards/markdown-memory.svg" alt="Markdown to memory">
     <img class="skateboard-card" src="/static/skateboards/rails.svg" alt="Rails between ideas">
     <img class="skateboard-card" src="/static/skateboards/signals.svg" alt="Design signals">
   </aside>
 </section>
+<script src="/static/about-skatepark.js?v=20260912" defer></script>
 {% endblock %}

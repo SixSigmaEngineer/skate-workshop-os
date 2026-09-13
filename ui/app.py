@@ -28,7 +28,7 @@ from calendar import monthrange
 from io import BytesIO
 from datetime import date, timedelta
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlencode
+from urllib.parse import parse_qs, quote, unquote, urlencode
 from urllib.request import Request as UrlRequest, urlopen
 from urllib.error import URLError, HTTPError
 from xml.sax.saxutils import escape as xml_escape
@@ -37,10 +37,14 @@ import frontmatter
 import markdown
 
 import embeddings
+import note_quality
+import ui_themes
+import vault_trash
+from audio_uploads import receive_recording, UploadProblem, audio_sections
 import asyncio
 
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -73,7 +77,7 @@ TEMPLATES = Jinja2Templates(directory=str(HERE / "templates"))
 STATIC_DIR = HERE / "static"
 SETTINGS_PATH = SKATE_ROOT / "settings.json"
 WORKSHOP_KNOWLEDGE_DIR = SKATE_ROOT / "workshop-knowledge-documents"
-MAX_LOCAL_AUDIO_BYTES = 250 * 1024 * 1024
+TRANSCRIPTION_RUN_LOCK = threading.Lock()
 TRANSCRIPTION_JOBS: dict[str, dict] = {}
 TRANSCRIPTION_JOBS_LOCK = threading.Lock()
 WHISPER_PROGRESS_LOCK = threading.Lock()
@@ -407,7 +411,17 @@ def _load_settings() -> dict:
         settings["streamdeck_port"] = max(1, min(65535, int(settings.get("streamdeck_port", 3030))))
     except (TypeError, ValueError):
         settings["streamdeck_port"] = 3030
+    try:
+        settings["recording_upload_limit_mb"] = max(250, min(4096, int(settings.get("recording_upload_limit_mb", 2048))))
+    except (TypeError, ValueError):
+        settings["recording_upload_limit_mb"] = 2048
+    if settings.get("ui_theme") not in {row[0] for row in ui_themes.PALETTES}:
+        settings["ui_theme"] = "default"
     return settings
+
+
+def _audio_upload_limit() -> int:
+    return int(_load_settings().get("recording_upload_limit_mb", 2048)) * 1024 * 1024
 
 
 def _save_settings(settings: dict) -> None:
@@ -465,7 +479,11 @@ def request_app_window():
 def _sidebar_context() -> dict:
     """Common context for the sidebar (sessions, themes, entry types)."""
     entries = load_all_entries()
+    settings = _load_settings()
+    themes = ui_themes.catalog(SKATE_ROOT / "theme-boards", STATIC_DIR / "skateboards")
+    current = next(row for row in themes if row["id"] == settings["ui_theme"])
     return {
+        "ui_themes": themes, "ui_theme": current, "theme_boards_path": str(SKATE_ROOT / "theme-boards"),
         "sessions": session_stats(entries),
         "themes": theme_stats(entries),
         "entry_types": ENTRY_TYPES,
@@ -475,7 +493,7 @@ def _sidebar_context() -> dict:
         "total_entries": len(entries),
         "logo_exists": (STATIC_DIR / "logo.png").exists(),
         "vault_path": str(SKATE_ROOT),
-        "settings": _public_settings(_load_settings()),
+        "settings": _public_settings(settings),
     }
 
 
@@ -656,7 +674,11 @@ def _entry_payload(entries) -> list[dict]:
     is better given to the rest of the note.
     """
     scoped = entries[:MAX_SYNTHESIS_NOTES]
-    bodies = [_normalize_newlines(entry.body or "").strip() for entry in scoped]
+    bodies = []
+    for entry in scoped:
+        body = _normalize_newlines(entry.body or "").strip()
+        reviewed = note_quality.screen(body, " ".join(entry.themes + entry.tags))
+        bodies.append(reviewed["text"] if reviewed["excluded_count"] else body)
     limits = _allocate_body_budget([len(body) for body in bodies])
     payload = []
     for entry, body, limit in zip(scoped, bodies, limits):
@@ -686,6 +708,7 @@ def _synthesis_prompt(entries, graph: dict) -> str:
         "graph_stats": graph.get("stats", {}),
     }
     return (
+        note_quality.RELEVANCE_RULES + "\n"
         "You are helping synthesize a design-thinking workshop in SKATE. "
         "Treat explicit capture markers as the primary workshop evidence: "
         "#P pains and unmet needs; #O direct observations; #Q open questions and HMW seeds; "
@@ -779,6 +802,12 @@ def _normalize_ai_insights(raw: dict, entries) -> dict:
     return {"pains": pains, "hmw_prompts": hmw_prompts, "solutions": solutions}
 
 
+class ModelHTTPError(ValueError):
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def _post_json(url: str, headers: dict, payload: dict, timeout: int = 120) -> dict:
     data = json.dumps(payload).encode("utf-8")
     request = UrlRequest(url, data=data, headers=headers, method="POST")
@@ -792,7 +821,7 @@ def _post_json(url: str, headers: dict, payload: dict, timeout: int = 120) -> di
             detail = ""
         if len(detail) > 600:
             detail = detail[:600] + "…"
-        raise ValueError(f"API returned HTTP {e.code}: {detail or e.reason}") from e
+        raise ModelHTTPError(e.code, f"API returned HTTP {e.code}: {detail or e.reason}") from e
 
 
 def _post_multipart(url: str, headers: dict, fields: dict[str, str], files: dict[str, dict], timeout: int = 90) -> dict:
@@ -981,7 +1010,9 @@ def _chat_completions(base_url: str, headers: dict, model: str, prompt: str, max
         payload["reasoning"] = {"effort": reasoning_effort}
     try:
         response = _post_json(f"{base_url}/chat/completions", headers, payload)
-    except ValueError:
+    except ValueError as exc:
+        if isinstance(exc, ModelHTTPError) and exc.status_code not in {400, 422}:
+            raise
         # Some models/servers reject the JSON-format or reasoning hints; retry plain.
         payload.pop("response_format", None)
         payload.pop("reasoning", None)
@@ -1004,6 +1035,8 @@ def _lmstudio_default_model(base_url: str) -> str:
 
 
 def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
+    if note_quality.WRITING_RULES not in prompt:
+        prompt = note_quality.WRITING_RULES + "\n" + prompt
     provider = settings.get("provider", "openai")
     if provider == "none":
         raise ValueError("AI synthesis is turned off in Settings.")
@@ -1108,7 +1141,9 @@ def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
         }
         try:
             response = _post_json(f"{base_url}/responses", headers, payload)
-        except HTTPError:
+        except ModelHTTPError as exc:
+            if exc.status_code not in {400, 422} or "format" not in str(exc).lower():
+                raise
             # Some models/endpoints may not accept the JSON-format hint; retry plain.
             payload.pop("text", None)
             response = _post_json(f"{base_url}/responses", headers, payload)
@@ -1340,6 +1375,9 @@ Markdown note:
 def _compression_prompt(title: str, tags: str, body: str) -> str:
     return f"""Clean and compress this raw SKATE workshop note into organized consulting memory.
 
+{note_quality.WRITING_RULES}
+{note_quality.RELEVANCE_RULES}
+
 The note may be dirty: shorthand, fragments, typos, half-finished bullets, and stream-of-consciousness capture. Rewrite it clean and concise while preserving meaning, names, commitments, and uncertainty. Do not invent anything that is not in the note.
 
 Then organize the substance into SKATE's typed signals so each one appears in the knowledge graph. Every distinct action item belongs in "actions", every friction point in "pain_points", and so on — split combined thoughts into separate signals.
@@ -1348,66 +1386,38 @@ Return only JSON with:
 {{
   "gist": "one sentence",
   "consulting_context": "the main consulting context for this note",
-  "key_points": ["3 to 6 cleaned bullets of context worth keeping as prose"],
-  "observations": ["0 to 6 things observed - direct evidence or notable statements"],
-  "pain_points": ["0 to 6 friction points"],
-  "actions": ["0 to 6 action items, each a single concrete follow-up"],
-  "questions": ["0 to 6 open questions"],
-  "insights": ["0 to 4 interpretations or patterns grounded in the note"],
-  "agent_memory": "compact paragraph under 120 words written as reusable long-term memory"
+  "key_points": ["distinct context worth keeping as prose, without repeating signals"],
+  "observations": ["distinct direct evidence or notable statements"],
+  "pain_points": ["distinct friction points"],
+  "actions": ["every distinct action item, each a single concrete follow-up"],
+  "questions": ["distinct open questions"],
+  "insights": ["interpretations or patterns grounded in the note"],
+  "solutions": ["solutions or experiments proposed"],
+  "recommendations": ["recommendations stated in the note"],
+  "decisions": ["decisions actually made"],
+  "agent_memory": "compact paragraph under 120 words written as reusable long-term memory",
+  "excluded_topics": ["short labels for unrelated topics omitted"]
 }}
 
 Title: {title}
 Tags: {tags}
 
 Markdown note:
-{body[:8000]}
+{body}
 """
 
 
 def _local_note_compression(title: str, tags: str, body: str) -> dict:
-    lines = [
-        line.strip()
-        for line in body.splitlines()
-        if line.strip() and not line.strip().startswith("---") and not line.strip().startswith("```")
-    ]
-    markers: dict[str, list[str]] = {
-        "observations": [],
-        "pain_points": [],
-        "actions": [],
-        "questions": [],
-        "insights": [],
-    }
-    marker_keys = {"O": "observations", "P": "pain_points", "A": "actions", "Q": "questions", "I": "insights"}
-    signal_pattern = re.compile(r"^\s*(?:[-*]\s+)?\\?#\s*([OPAQI])(?:\s*:|\s+)(.+)$", flags=re.I)
-    plain_lines = []
-    for line in lines:
-        match = signal_pattern.match(line)
-        if match:
-            markers[marker_keys[match.group(1).upper()]].append(match.group(2).strip())
-            continue
-        plain_lines.append(re.sub(r"^#+\s*", "", line))
-
-    gist_source = next((line for line in plain_lines if line and not line.startswith("#")), title)
-    key_points = []
-    for line in plain_lines:
-        cleaned = re.sub(r"^[-*> ]+", "", line).strip()
-        if cleaned and cleaned not in key_points and not cleaned.lower().startswith(("summary", "notes")):
-            key_points.append(cleaned)
-        if len(key_points) >= 5:
-            break
-
-    agent_memory = _plain_text_excerpt(" ".join(key_points or [gist_source]), 520)
+    extracted = note_quality.local_signals(body, f"{title} {tags}")
+    evidence = [item for key in note_quality.SIGNAL_KEYS.values() for item in extracted[key]]
+    context = extracted["context"]
     return {
-        "gist": _plain_text_excerpt(gist_source or title, 180),
-        "consulting_context": f"Tags {tags or 'none'} provide retrieval rails for this note.",
-        "key_points": key_points[:6],
-        "observations": markers["observations"][:6],
-        "pain_points": markers["pain_points"][:6],
-        "actions": markers["actions"][:6],
-        "questions": markers["questions"][:6],
-        "insights": markers["insights"][:4],
-        "agent_memory": agent_memory,
+        "gist": _plain_text_excerpt(" ".join(evidence[:3]), 500)
+                or "No structured workshop signals were identified. Review the retained context below.",
+        "consulting_context": " ".join((tags or title).split()),
+        "key_points": context,
+        **{key: extracted[key] for key in note_quality.SIGNAL_KEYS.values()},
+        "agent_memory": "",
         "mode": "local",
     }
 
@@ -1423,34 +1433,32 @@ def _plain_text_excerpt(text: str, limit: int) -> str:
 
 
 def _normalize_compression(raw: dict, fallback: dict) -> dict:
-    def list_of_strings(key: str, limit: int) -> list[str]:
-        values = raw.get(key, [])
+    def list_of_strings(key: str) -> list[str]:
+        values = raw.get(key, fallback.get(key, []))
         if not isinstance(values, list):
             return fallback.get(key, [])
         out = []
         for item in values:
-            text = str(item).strip()
+            if not isinstance(item, str):
+                continue
+            text = item.strip()
             text = re.sub(r"^[-*•]\s*", "", text).strip()
-            if key in {"observations", "pain_points", "actions", "questions", "insights"}:
+            if key in note_quality.SIGNAL_KEYS.values():
                 text = re.sub(
-                    r"^(?:\\?#\s*[OPAQI](?:\s*:|\s+)|(?:Observation|Pain|Action(?:\s+Item)?|(?:Open\s+)?Question|Insight):\s*)",
+                    r"^(?:\\?#\s*[OPAQISRD](?:\s*:|\s+)|(?:Observation|Pain|Action(?:\s+Item)?|(?:Open\s+)?Question|Insight|Solution|Recommendation|Decision):\s*)",
                     "",
                     text,
                     flags=re.I,
                 ).strip()
             if text and text not in out:
                 out.append(text)
-        return out[:limit]
+        return out
 
     return {
         "gist": str(raw.get("gist", "")).strip() or fallback["gist"],
         "consulting_context": str(raw.get("consulting_context", "")).strip() or fallback["consulting_context"],
-        "key_points": list_of_strings("key_points", 6),
-        "observations": list_of_strings("observations", 6),
-        "pain_points": list_of_strings("pain_points", 6),
-        "actions": list_of_strings("actions", 6),
-        "questions": list_of_strings("questions", 6),
-        "insights": list_of_strings("insights", 4),
+        "key_points": list_of_strings("key_points"),
+        **{key: list_of_strings(key) for key in note_quality.SIGNAL_KEYS.values()},
         "agent_memory": str(raw.get("agent_memory", "")).strip() or fallback["agent_memory"],
         "mode": "ai",
     }
@@ -1468,8 +1476,8 @@ def _compression_markdown(compression: dict) -> str:
         f"**Gist:** {compression['gist']}",
         f"**Context:** {compression['consulting_context']}",
     ]
-    if compression.get("key_points"):
-        sections.append("**Key points**\n" + bullets(compression["key_points"]))
+    if compression.get("key_points") and compression.get("mode") != "local":
+        sections.append("**Key points**\n\n" + bullets(compression["key_points"]))
     signal_lines = "\n".join(
         part
         for part in (
@@ -1478,11 +1486,17 @@ def _compression_markdown(compression: dict) -> str:
             signals("Q", compression.get("questions", [])),
             signals("I", compression.get("insights", [])),
             signals("A", compression.get("actions", [])),
+            signals("S", compression.get("solutions", [])),
+            signals("R", compression.get("recommendations", [])),
         )
         if part
     )
     if signal_lines:
-        sections.append("**Signals**\n" + signal_lines)
+        sections.append("**Signals**\n\n" + signal_lines)
+    if compression.get("decisions"):
+        sections.append("**Decisions**\n\n" + bullets(compression["decisions"]))
+    if compression.get("key_points") and compression.get("mode") == "local":
+        sections.append("**Additional context to review (not classified)**\n\n" + bullets(compression["key_points"]))
     if compression.get("agent_memory"):
         sections.append("**Agent memory**\n" + compression["agent_memory"])
     return "\n\n".join(sections) + "\n"
@@ -1490,6 +1504,9 @@ def _compression_markdown(compression: dict) -> str:
 
 def _transcript_summary_prompt(title: str, transcript: str) -> str:
     return f"""Turn this raw workshop or meeting transcript into clean, concise SKATE meeting notes.
+
+{note_quality.WRITING_RULES}
+{note_quality.RELEVANCE_RULES}
 
 Use only evidence present in the transcript. Remove filler, repetition, false starts, and transcription noise. Keep names, commitments, uncertainty, and important context accurate. Distinguish observed evidence from interpretation.
 
@@ -1503,84 +1520,44 @@ Return only JSON with:
   "solutions": ["solutions or experiments proposed"],
   "recommendations": ["recommendations made"],
   "insights": ["interpretations or patterns grounded in the transcript"],
-  "tags": ["3 to 7 lowercase tags"]
+  "decisions": ["decisions actually made"],
+  "key_points": ["important context not already captured as a signal"],
+  "tags": ["3 to 7 lowercase tags"],
+  "excluded_topics": ["short labels for unrelated topics omitted"]
 }}
 
 Title: {title}
 
 Transcript:
-{transcript[:40000]}
+{transcript}
 """
 
 
 def _local_transcript_summary(title: str, transcript: str) -> dict:
-    sentences = re.split(r"(?<=[.!?])\s+", transcript.strip())
-    clean = [s.strip() for s in sentences if s.strip()]
-    pain_words = ("pain", "problem", "friction", "delay", "risk", "manual", "hard", "stuck", "missing", "slow")
-    action_words = ("need to", "should", "follow up", "next step", "action item", "todo", "assign", "build", "create")
-    solution_words = ("solution", "we could", "prototype", "experiment", "pilot", "idea is")
-    recommendation_words = ("recommend", "recommendation", "we propose", "proposed approach")
-    insight_words = ("because", "means", "pattern", "root cause", "suggests")
-
-    def contains_phrase(sentence: str, phrases: tuple[str, ...]) -> bool:
-        lowered = sentence.lower()
-        return any(re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", lowered) for phrase in phrases)
-
-    buckets = {
-        "pain_points": [],
-        "actions": [],
-        "questions": [],
-        "solutions": [],
-        "recommendations": [],
-        "insights": [],
-        "observations": [],
-    }
-    for sentence in clean:
-        if "?" in sentence:
-            bucket = "questions"
-        elif contains_phrase(sentence, recommendation_words):
-            bucket = "recommendations"
-        elif contains_phrase(sentence, solution_words):
-            bucket = "solutions"
-        elif contains_phrase(sentence, action_words):
-            bucket = "actions"
-        elif contains_phrase(sentence, pain_words):
-            bucket = "pain_points"
-        elif contains_phrase(sentence, insight_words):
-            bucket = "insights"
-        else:
-            bucket = "observations"
-        if len(buckets[bucket]) < 5:
-            buckets[bucket].append(sentence)
-
-    if not buckets["observations"]:
-        buckets["observations"] = clean[:3]
-
+    extracted = note_quality.local_signals(transcript, title)
+    relevant = [item for key in note_quality.SIGNAL_KEYS.values() for item in extracted[key]]
     return {
-        "summary": _plain_text_excerpt(" ".join(clean[:4]) or transcript or title, 650),
-        "observations": buckets["observations"],
-        "pain_points": buckets["pain_points"],
-        "actions": buckets["actions"],
-        "questions": buckets["questions"],
-        "solutions": buckets["solutions"],
-        "recommendations": buckets["recommendations"],
-        "insights": buckets["insights"],
-        "tags": [],
-        "mode": "local",
+        "summary": _plain_text_excerpt(" ".join(relevant[:4]), 650)
+                   or "No structured workshop signals were identified. Review the retained context below.",
+        **{key: extracted[key] for key in note_quality.SIGNAL_KEYS.values()},
+        "key_points": extracted["context"],
+        "tags": [], "mode": "local",
     }
 
 
 def _normalize_transcript_summary(raw: dict, fallback: dict) -> dict:
-    def strings(key: str, limit: int) -> list[str]:
-        values = raw.get(key, [])
+    def strings(key: str) -> list[str]:
+        values = raw.get(key, fallback.get(key, []))
         if not isinstance(values, list):
             return fallback.get(key, [])
         out = []
         for item in values:
-            text = str(item).strip()
+            if not isinstance(item, str):
+                continue
+            text = item.strip()
             if text and text not in out:
                 out.append(text)
-        return out[:limit]
+        return out
 
     tags = []
     for tag in raw.get("tags", []):
@@ -1590,13 +1567,8 @@ def _normalize_transcript_summary(raw: dict, fallback: dict) -> dict:
 
     return {
         "summary": str(raw.get("summary", "")).strip() or fallback["summary"],
-        "observations": strings("observations", 7),
-        "pain_points": strings("pain_points", 5),
-        "actions": strings("actions", 7),
-        "questions": strings("questions", 5),
-        "solutions": strings("solutions", 5),
-        "recommendations": strings("recommendations", 5),
-        "insights": strings("insights", 5),
+        **{key: strings(key) for key in note_quality.SIGNAL_KEYS.values()},
+        "key_points": strings("key_points"),
         "tags": tags[:7],
         "mode": "ai",
     }
@@ -1614,9 +1586,15 @@ def _transcript_summary_markdown(summary: dict) -> str:
         ("I", "insights"),
     ):
         signals.extend(f"- #{code}: {item}" for item in summary.get(key, []) if str(item).strip())
+    signals.extend(f"- Decision: {item}" for item in summary.get("decisions", []))
+    if summary.get("mode") != "local":
+        signals.extend(f"- {item}" for item in summary.get("key_points", []))
     signal_text = "\n".join(signals) if signals else "- No structured signals were captured."
+    if summary.get("mode") == "local" and summary.get("key_points"):
+        signal_text += "\n\n### Additional context to review (not classified)\n\n"
+        signal_text += "\n".join(f"- {item}" for item in summary["key_points"])
 
-    return f"""## AI-Cleaned Meeting Notes
+    return f"""## Meeting Notes
 
 {summary["summary"]}
 
@@ -1743,6 +1721,9 @@ Instruction: {mode['prompt']}
 Session: {session or 'unspecified'}
 Common themes: {themes}
 
+{note_quality.WRITING_RULES}
+{note_quality.RELEVANCE_RULES}
+
 Relevant session notes:
 {session_context[:3500]}
 
@@ -1765,29 +1746,23 @@ Return only JSON with:
 }}
 
 Workshop capture:
-{text[:12000]}
+{_select_body_excerpt(text, 12000)[0]}
 """
 
 
-def _local_spotter_response(mode: dict, text: str) -> dict:
-    summary = _plain_text_excerpt(text, 500)
+def _local_spotter_response(mode: dict, text: str, focus: str = "") -> dict:
+    extracted = note_quality.local_signals(text, focus)
+    cleaned = extracted["review"]["text"]
+    summary = _plain_text_excerpt(cleaned, 500)
     return {
-        "spoken_response": f"Captured as {mode['label']}. I would validate the impact, owner, and next decision before moving on.",
-        "title": f"{mode['label']}: {_plain_text_excerpt(text, 70) or 'Workshop Capture'}",
-        "entry_type": mode["entry_type"],
-        "themes": [
-            theme
-            for theme in CONSULTING_THEMES
-            if any(word in text.lower() for word in theme.lower().split())
-        ][:5],
-        "summary": summary,
-        "evidence": [summary] if summary else [],
-        "insights": [],
-        "recommendations": [],
-        "actions": [],
-        "questions": ["What evidence would confirm this?", "Who owns the next step?"],
-        "relationships": [],
-        "mode": "local",
+        "spoken_response": "Workshop capture ready for review." if cleaned else "No workshop content was identified in this capture.",
+        "title": f"{mode['label']}: {_plain_text_excerpt(cleaned, 70) or 'No workshop content'}",
+        "entry_type": mode["entry_type"] if cleaned else "note",
+        "themes": [], "summary": summary,
+        "evidence": extracted["observations"],
+        "insights": extracted["insights"], "recommendations": extracted["recommendations"],
+        "actions": extracted["actions"], "questions": extracted["questions"],
+        "relationships": [], "mode": "local",
     }
 
 
@@ -1911,7 +1886,7 @@ def _whisper_model_root() -> Path:
     return model_root
 
 
-def _faster_whisper_transcribe(audio_bytes: bytes, filename: str, content_type: str, model_name: str, progress_callback=None) -> str:
+def _faster_whisper_transcribe(audio_bytes: bytes | Path, filename: str, content_type: str, model_name: str, progress_callback=None) -> str:
     """Local transcription via faster-whisper (CTranslate2).
 
     This engine ships inside the packaged app: no PyTorch, no external
@@ -1950,31 +1925,29 @@ def _faster_whisper_transcribe(audio_bytes: bytes, filename: str, content_type: 
             WHISPER_MODEL_CACHE["model"] = model
 
     import tempfile
+    import contextlib
 
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as fh:
-            fh.write(audio_bytes)
-            temp_path = Path(fh.name)
-        report(8, "Decoding recording")
-        segments, info = model.transcribe(str(temp_path), beam_size=5)
-        duration = float(getattr(info, "duration", 0.0) or 0.0)
+    with tempfile.TemporaryDirectory(prefix="skate-whisper-") as directory:
+        work = Path(directory)
+        if isinstance(audio_bytes, Path):
+            source = audio_bytes
+        else:
+            source = work / ("recording" + suffix)
+            source.write_bytes(audio_bytes)
+        report(8, "Decoding recording in ten-minute sections")
         parts: list[str] = []
-        for segment in segments:
-            parts.append(segment.text)
-            if duration > 0:
-                report(12 + round(83 * min(1.0, float(segment.end) / duration)), "Transcribing recording")
+        with contextlib.closing(audio_sections(source, work)) as sections:
+            for section, offset, duration in sections:
+                segments, info = model.transcribe(str(section), beam_size=5)
+                for segment in segments:
+                    parts.append(segment.text)
+                    if duration > 0:
+                        report(12 + round(83 * min(1.0, (offset + float(segment.end)) / duration)), "Transcribing recording")
         report(98, "Finalizing transcript")
         return " ".join(part.strip() for part in parts if part.strip()).strip()
-    finally:
-        if temp_path:
-            try:
-                temp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
 
 
-def _local_whisper_transcribe(audio_bytes: bytes, filename: str, content_type: str, model_name: str, progress_callback=None) -> str:
+def _local_whisper_transcribe(audio_bytes: bytes | Path, filename: str, content_type: str, model_name: str, progress_callback=None) -> str:
     def report(percent: int, phase: str) -> None:
         if progress_callback:
             progress_callback(max(0, min(99, int(percent))), phase)
@@ -2040,6 +2013,12 @@ def _local_whisper_transcribe(audio_bytes: bytes, filename: str, content_type: s
                 return model.transcribe(source, fp16=False, verbose=False)
             finally:
                 transcribe_module.tqdm.tqdm = original_tqdm
+
+    if isinstance(audio_bytes, Path):
+        if audio_bytes.stat().st_size > 250 * 1024 * 1024:
+            raise RuntimeError("Large recordings require faster-whisper. Run Start SKATE.bat to install the current requirements.")
+        result = run_whisper(str(audio_bytes))
+        return str(result.get("text", "")).strip()
 
     if suffix == ".wav" or content_type in {"audio/wav", "audio/x-wav", "audio/wave"}:
         try:
@@ -2463,8 +2442,8 @@ def _checked(value: str | None) -> bool:
 def _embedded_actions(entry) -> list[dict[str, str]]:
     """Return actionable #A bullets captured inside an ordinary memory object."""
     actions = []
-    for match in re.finditer(r"(?m)^\s*[-*]\s+#A:\s*(.+?)\s*$", entry.body or ""):
-        text = match.group(1).strip()
+    for captured in dict.fromkeys(capture_markers(entry).get("action", [])):
+        text = captured.strip()
         if not text:
             continue
         fingerprint = hashlib.sha1(f"{entry.file_id}\n{text}".encode("utf-8")).hexdigest()[:12]
@@ -2783,6 +2762,86 @@ def sessions_page(request: Request):
     )
 
 
+@app.get("/trash", response_class=HTMLResponse)
+def trash_page(request: Request):
+    return TEMPLATES.TemplateResponse(request, "trash.html", {
+        **_sidebar_context(), "trash_items": vault_trash.items(SKATE_ROOT),
+    })
+
+
+async def _trash_confirmation(request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+@app.post("/api/trash/session/{session_key}")
+async def trash_session(request: Request, session_key: str):
+    payload = await _trash_confirmation(request)
+    if payload.get("confirmed") is not True:
+        return JSONResponse({"ok": False, "error": "Confirm the session removal first."}, status_code=400)
+    with RECORDER_LOCK, vault_trash.LOCK:
+        if (RECORDER.get("state") in {"recording", "stopping", "transcribing"}
+                and (RECORDER.get("session") or "unassigned") == session_key):
+            return JSONResponse({"ok": False, "error": "Finish recording and let the transcript save before moving this session to Trash."}, status_code=409)
+        entries = load_all_entries()
+        current = next((row for row in session_stats(entries) if row["key"] == session_key), None)
+        if current is None:
+            return JSONResponse({"ok": False, "error": "Session not found. Refresh the page."}, status_code=404)
+        selected = [entry for entry in entries if entry.session_key == session_key]
+        if payload.get("expected_count") != len(selected):
+            return JSONResponse({"ok": False, "error": "The session's notes changed. Refresh the page and review the new count before removing it."}, status_code=409)
+        paths = [entry.path for entry in selected]
+        # Membership comes from metadata, not folder names: manual and imported
+        # notes can share a folder while belonging to different sessions.
+        for path in SESSIONS.rglob("*.md"):
+            try:
+                post = frontmatter.load(path, encoding="utf-8")
+            except Exception:
+                continue
+            key = str(post.metadata.get("session", "") or path.parent.name or path.stem).strip()
+            if key == session_key:
+                paths.append(path)
+        try:
+            batch = vault_trash.move(SKATE_ROOT, paths, title=current["label"], kind="session", session=session_key)
+        except (OSError, ValueError):
+            return JSONResponse({"ok": False, "error": "The session could not be moved completely. Refresh the page and check Trash; your files remain on this PC."}, status_code=409)
+    return {"ok": True, "redirect": "/trash", "id": batch["id"]}
+
+
+@app.post("/api/trash/note/{file_id:path}")
+async def trash_note(request: Request, file_id: str):
+    payload = await _trash_confirmation(request)
+    if payload.get("confirmed") is not True:
+        return JSONResponse({"ok": False, "error": "Confirm the note removal first."}, status_code=400)
+    with vault_trash.LOCK:
+        # Only markdown notes can be removed through this endpoint, never keys
+        # or shared attachments accepted by the older generic entry reader.
+        if not file_id.endswith(".md"):
+            return JSONResponse({"ok": False, "error": "Note not found."}, status_code=404)
+        entry = find_entry_by_id(file_id)
+        if entry is None:
+            return JSONResponse({"ok": False, "error": "Note not found. Refresh the page."}, status_code=404)
+        try:
+            batch = vault_trash.move(SKATE_ROOT, [entry.path], title=entry.title, kind="note", session=entry.session_key)
+        except (OSError, ValueError):
+            return JSONResponse({"ok": False, "error": "The note could not be moved. Refresh the page and check Trash; your files remain on this PC."}, status_code=409)
+    return {"ok": True, "redirect": "/session/" + quote(entry.session_key, safe="") + "?trashed=1", "id": batch["id"]}
+
+
+@app.post("/api/trash/restore/{batch_id}")
+def restore_trash(batch_id: str):
+    try:
+        restored = vault_trash.restore(SKATE_ROOT, batch_id)
+    except vault_trash.TrashError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    except OSError:
+        return JSONResponse({"ok": False, "error": "Restore could not finish. Check the vault folder is writable, then try again."}, status_code=409)
+    return {"ok": True, "redirect": "/session/" + quote(restored["session"], safe="")}
+
+
 @app.get("/sessions/new", response_class=HTMLResponse)
 def new_session(request: Request):
     sidebar = _sidebar_context()
@@ -2819,6 +2878,48 @@ async def create_session(request: Request):
     folder.mkdir(parents=True, exist_ok=True)
     _write_note(path, frontmatter.Post(body, **metadata))
     return RedirectResponse(url=f"/session/{session}", status_code=303)
+
+
+@app.post("/api/sessions")
+async def create_session_inline(request: Request):
+    """Create a session from a capture page without navigating or replacing one."""
+    try:
+        payload = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JSONResponse({"ok": False, "error": "Enter a session name."}, status_code=400)
+    title = payload.get("title") if isinstance(payload, dict) else None
+    if not isinstance(title, str) or not title.strip():
+        return JSONResponse({"ok": False, "error": "Enter a session name."}, status_code=400)
+    title = " ".join(title.split())
+    if len(title) > 120 or not re.search(r"[A-Za-z0-9]", title):
+        return JSONResponse({"ok": False, "error": "Use a name of up to 120 characters containing a letter or number."}, status_code=400)
+    key = _slugify(title)
+    if key == "unassigned":
+        return JSONResponse({"ok": False, "error": "Unassigned is reserved. Choose a name for your new session."}, status_code=400)
+    if re.fullmatch(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])", key):
+        key = "session-" + key
+    existing = next((row for row in session_stats(load_all_entries()) if row["key"] == key), None)
+    if existing:
+        if existing["status"] == "inactive":
+            return JSONResponse({"ok": False, "error": "That session is inactive. Reactivate it on the Sessions page or choose another name."}, status_code=409)
+        if existing["label"].casefold() != title.casefold():
+            return JSONResponse({"ok": False, "error": "A session with a similar name already exists. Choose another name."}, status_code=409)
+        return {"ok": True, "created": False, "session": {"key": key, "label": existing["label"]}}
+    path = SESSIONS / key / "README.md"
+    post = frontmatter.Post(
+        f"# {title}\n\n## Focus\n\nWhat are we trying to learn or decide?\n\n## Readout Notes\n\n- \n",
+        title=title, session=key, status="active", date=date.today().isoformat(),
+    )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Exclusive creation also protects a session created in another window.
+        with path.open("x", encoding="utf-8", newline="") as handle:
+            handle.write(frontmatter.dumps(post))
+    except FileExistsError:
+        return JSONResponse({"ok": False, "error": "That session already exists. Refresh the session list or choose another name."}, status_code=409)
+    except OSError:
+        return JSONResponse({"ok": False, "error": "The session could not be saved. Check that your vault folder is writable and try again."}, status_code=500)
+    return JSONResponse({"ok": True, "created": True, "session": {"key": key, "label": title}}, status_code=201)
 
 
 def _ensure_session(session_slug: str, session_label: str, summary: str = "") -> None:
@@ -3072,7 +3173,8 @@ def serve_attachment(session: str, filename: str):
     if "/" in filename or "\\" in filename or ".." in filename:
         return HTMLResponse("Not found", status_code=404)
     extension = Path(filename).suffix.lower()
-    if extension not in ALLOWED_ATTACHMENT_EXTENSIONS:
+    # Recorder WAVs may exceed the ordinary upload limit and are written locally.
+    if extension not in ALLOWED_ATTACHMENT_EXTENSIONS | {".wav"}:
         return HTMLResponse("Not found", status_code=404)
     directory = _attachment_dir(session)
     try:
@@ -3089,22 +3191,40 @@ def serve_attachment(session: str, filename: str):
     return FileResponse(target, media_type=media_type, headers=headers)
 
 
+def _render_note_html(entry) -> str:
+    render_body = re.sub(
+        r"(?im)^(\s*)(?:[-*]\s+)?\\?#\s*([POAQRSI])(?:\s*:|\s+)",
+        r"\1- \\#\2: ", entry.body,
+    )
+    lines = []
+    for line in render_body.splitlines():
+        if re.match(r"^\s*-\s+\\#[POAQRSI]:", line) and lines and lines[-1].strip() and not re.match(r"^\s*-\s+", lines[-1]):
+            lines.append("")
+        lines.append(line)
+    render_body = "\n".join(lines)
+    # Absolute attachment URLs also work in session print views.
+    render_body = re.sub(r"\]\(attachments/", f"](/entry/{entry.session_key}/attachments/", render_body)
+    return _decorate_capture_markers(markdown.markdown(render_body, extensions=["fenced_code", "tables", "sane_lists"]))
+
+
+@app.get("/session/{session_key}/print", response_class=HTMLResponse)
+def print_session(request: Request, session_key: str):
+    entries = _active_session_entries(session_key)
+    if not entries:
+        return HTMLResponse("There are no active notes to export in this session.", status_code=404)
+    label = next((row["label"] for row in session_stats(load_all_entries()) if row["key"] == session_key), session_key)
+    return TEMPLATES.TemplateResponse(request, "session_print.html", {
+        "title": label, "session_key": session_key, "export_date": date.today().isoformat(),
+        "notes": [{"entry": entry, "html": _render_note_html(entry)} for entry in entries],
+    })
+
+
 @app.get("/entry/{file_id:path}", response_class=HTMLResponse)
 def view_entry(request: Request, file_id: str):
     entry = find_entry_by_id(file_id)
     if entry is None:
         return HTMLResponse("Entry not found", status_code=404)
-    MD.reset()
-    # Rendering-only transform; the markdown source stays exactly as typed.
-    # Normalize bare, bulleted, spaced, and colonless signal markers into a
-    # compact rendered row. Escaping the hash prevents ``# P ...`` from
-    # becoming a large Markdown heading.
-    render_body = re.sub(
-        r"(?im)^(\s*)(?:[-*]\s+)?\\?#\s*([POAQRSI])(?:\s*:|\s+)",
-        r"\1- \\#\2: ",
-        entry.body,
-    )
-    body_html = _decorate_capture_markers(MD.convert(render_body))
+    body_html = _render_note_html(entry)
     embedded_actions = _embedded_actions(entry) if entry.entry_type != "action" else []
     promoted_sources = {candidate.captured_from for candidate in load_all_entries() if candidate.captured_from}
     for action in embedded_actions:
@@ -3250,46 +3370,201 @@ async def classify_note(request: Request):
         }
 
 
+CLEANUP_CLOUD_SLOTS = threading.BoundedSemaphore(3)
+CLEANUP_LOCAL_SLOTS = threading.BoundedSemaphore(1)
+
+
+class CleanupCancelled(Exception):
+    pass
+
+
+def _cleanup_model_call(settings: dict, prompt: str, cancelled: threading.Event, provider_stopped: threading.Event) -> str:
+    # Hold the permit inside the real request thread. Cancelling its async
+    # caller cannot release a slot while a provider request is still running.
+    slots = CLEANUP_LOCAL_SLOTS if settings.get("provider") == "lmstudio" else CLEANUP_CLOUD_SLOTS
+    while not cancelled.is_set() and not provider_stopped.is_set():
+        if not slots.acquire(timeout=0.1):
+            continue
+        try:
+            if cancelled.is_set() or provider_stopped.is_set():
+                break
+            return _call_llm(settings, prompt)
+        finally:
+            slots.release()
+    raise CleanupCancelled()
+
+
+async def _reviewed_summary(payload: dict, kind: str, progress=None, cancelled=None) -> dict:
+    title = str(payload.get("title", "")).strip() or "Untitled"
+    source = str(payload.get("body" if kind == "compression" else "transcript", "")).strip()
+    if not source:
+        return {"ok": False, "error": "Add note or transcript text first."}
+    focus = " ".join(str(payload.get(key, "")) for key in ("title", "tags", "focus", "session_label"))
+    review = note_quality.screen(source, focus)
+    settings = _load_settings()
+    excluded_topics, failures, completed, active = [], 0, 0, 0
+    connection_failures = 0
+    provider_issue = ""
+    cancelled = cancelled or threading.Event()
+    provider_stopped = threading.Event()
+    ai = _llm_available(settings)
+    parts = note_quality.chunks(review["text"]) if ai else ([review["text"]] if review["text"] else [])
+    results = [None] * len(parts)
+    pending = iter(enumerate(parts))
+    workers_count = min(len(parts), 3 if ai and settings.get("provider") != "lmstudio" else 1)
+
+    def report():
+        if progress:
+            progress({"type": "progress", "completed": completed, "total": len(parts),
+                      "active": active, "fallback_sections": failures,
+                      "provider": LLM_PROVIDER_LABELS.get(settings["provider"], settings["provider"]) if ai else "Local cleanup",
+                      "provider_issue": provider_issue})
+
+    async def worker():
+        nonlocal completed, active, failures, connection_failures, provider_issue
+        for index, part in pending:
+            if cancelled.is_set():
+                raise asyncio.CancelledError
+            active += 1
+            report()
+            if kind == "compression":
+                fallback = _local_note_compression(title, focus, part)
+                prompt = _compression_prompt(title, focus, part)
+                normalize = _normalize_compression
+            else:
+                fallback = _local_transcript_summary(focus, part)
+                prompt = _transcript_summary_prompt(f"{title}\nWorkshop focus: {focus}", part)
+                normalize = _normalize_transcript_summary
+            result = fallback
+            used_ai = False
+            if ai and not provider_stopped.is_set():
+                try:
+                    response = await asyncio.to_thread(_cleanup_model_call, settings, prompt, cancelled, provider_stopped)
+                    raw = _extract_json_object(response)
+                    result = normalize(raw, fallback)
+                    used_ai = True
+                    labels = raw.get("excluded_topics", [])
+                    if isinstance(labels, list):
+                        excluded_topics.extend(label[:160] for label in labels if isinstance(label, str))
+                except ModelHTTPError as exc:
+                    # Do not repeat a rejected key, invalid model, quota error,
+                    # or failing service once per section of a long meeting.
+                    if exc.status_code in {401, 403}:
+                        provider_issue = "The AI provider rejected access. Check the saved API key."
+                    elif exc.status_code == 429:
+                        provider_issue = "The AI provider reported a rate or quota limit."
+                    else:
+                        provider_issue = f"The AI provider rejected the request (HTTP {exc.status_code}). Check the provider and model settings."
+                    provider_stopped.set()
+                except (URLError, TimeoutError, OSError):
+                    connection_failures += 1
+                    if connection_failures >= 2:
+                        provider_issue = "Repeated AI connection failures or timeouts. Remaining sections use local extraction."
+                        provider_stopped.set()
+                except (ValueError, KeyError, TypeError, HTTPError):
+                    pass  # A malformed section falls back locally without losing its evidence.
+                except CleanupCancelled:
+                    if cancelled.is_set():
+                        raise asyncio.CancelledError
+            if ai and not used_ai:
+                failures += 1
+            # Completion order can vary. Merge by source order, never by speed.
+            results[index] = note_quality.guard_result(result, focus)
+            active -= 1
+            completed += 1
+            report()
+
+    report()
+    workers = [asyncio.create_task(worker()) for _ in range(workers_count)]
+    try:
+        await asyncio.gather(*workers)
+    except asyncio.CancelledError:
+        cancelled.set()
+        raise
+    finally:
+        if any(not task.done() for task in workers):
+            cancelled.set()
+            for task in workers:
+                task.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+    empty = (_local_note_compression(title, focus, "") if kind == "compression"
+             else _local_transcript_summary(title, ""))
+    combined = dict(results[0] if results else empty)
+    # Merge without a global six-signal cap that would discard late decisions.
+    for key in ("key_points", *note_quality.SIGNAL_KEYS.values(), "tags"):
+        combined[key] = list(dict.fromkeys(item for result in results for item in result.get(key, [])))
+    for key in ("gist", "summary", "agent_memory"):
+        if key in combined:
+            combined[key] = "\n\n".join(dict.fromkeys(result.get(key, "") for result in results if result.get(key))) or empty.get(key, "")
+    combined["mode"] = "mixed" if failures and failures < len(parts) else "ai" if ai and parts and not failures else "local"
+    if ai and parts:
+        combined["provider"], combined["model"] = settings["provider"], _active_model(settings)
+    review.pop("text")
+    review.pop("units")
+    review.update({"chunks_processed": len(parts), "local_fallback_chunks": failures,
+                   "excluded_topics": list(dict.fromkeys(excluded_topics)), "provider_issue": provider_issue})
+    message = f"Reviewed all {review['source_units']} text segments. Removed {review['excluded_count']} clear off-topic segments and {review['duplicate_count']} duplicates."
+    if combined["mode"] != "ai":
+        message += " Local rules cannot judge every topic. Uncertain content is kept for review; No AI output puts it after the structured signals."
+    if failures:
+        message += f" AI was unavailable for {failures} sections; those sections use local extraction."
+    if provider_issue:
+        message += " " + provider_issue
+    key = "compression" if kind == "compression" else "summary"
+    render = _compression_markdown if kind == "compression" else _transcript_summary_markdown
+    return {"ok": True, key: combined, "markdown": render(combined), "review": review, "message": message}
+
+
+@app.post("/api/cleanup/stream")
+async def stream_cleanup(request: Request):
+    try:
+        payload = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JSONResponse({"ok": False, "error": "Could not read the note text."}, status_code=400)
+    if not isinstance(payload, dict) or payload.get("kind") not in {"compression", "summary"}:
+        return JSONResponse({"ok": False, "error": "Choose note cleanup or transcript summary."}, status_code=400)
+
+    async def events():
+        queue = asyncio.Queue()
+        cancelled = threading.Event()
+
+        async def run():
+            try:
+                result = await _reviewed_summary(payload, payload["kind"], queue.put_nowait, cancelled)
+                queue.put_nowait({"type": "result", "data": result})
+            except Exception:
+                queue.put_nowait({"type": "error", "error": "Cleanup could not finish. Your original note is still in the editor."})
+
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=10)
+                except asyncio.TimeoutError:
+                    event = {"type": "heartbeat"}
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+                if event["type"] in {"result", "error"}:
+                    break
+        finally:
+            cancelled.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    return StreamingResponse(events(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
 @app.post("/api/compress-note")
 async def compress_note(request: Request):
     try:
-        payload = json.loads((await request.body()).decode("utf-8"))
-    except json.JSONDecodeError:
+        payload = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return {"ok": False, "error": "Could not read the note text."}
-
-    title = str(payload.get("title", "")).strip() or "Untitled"
-    tags = str(payload.get("tags", "")).strip()
-    body = str(payload.get("body", "")).strip()
-    fallback = _local_note_compression(title, tags, body)
-    settings = _load_settings()
-
-    if not _llm_available(settings):
-        markdown_block = _compression_markdown(fallback)
-        return {
-            "ok": True,
-            "compression": fallback,
-            "markdown": markdown_block,
-            "message": f"{_llm_unavailable_reason(settings)}, so SKATE used local compression.",
-        }
-
-    try:
-        response_text = _call_llm(settings, _compression_prompt(title, tags, body))
-        raw = _extract_json_object(response_text)
-        compression = _normalize_compression(raw, fallback)
-        compression["provider"] = settings["provider"]
-        compression["model"] = settings["model"]
-        return {"ok": True, "compression": compression, "markdown": _compression_markdown(compression)}
-    except (ValueError, KeyError, json.JSONDecodeError, HTTPError, URLError, TimeoutError, OSError) as e:
-        fallback["error"] = str(e)
-        return {
-            "ok": True,
-            "compression": fallback,
-            "markdown": _compression_markdown(fallback),
-            "message": f"AI compression failed, so SKATE used local compression. {e}",
-        }
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "Could not read the note text."}
+    return await _reviewed_summary(payload, "compression")
 
 
-def _perform_transcription(audio_bytes: bytes, filename: str, content_type: str, requested_model: str, progress_callback=None) -> dict:
+def _perform_transcription(audio_bytes: bytes | Path, filename: str, content_type: str, requested_model: str, progress_callback=None) -> dict:
     def report(percent: int, phase: str) -> None:
         if progress_callback:
             progress_callback(percent, phase)
@@ -3302,7 +3577,8 @@ def _perform_transcription(audio_bytes: bytes, filename: str, content_type: str,
     # The speech_to_text_provider setting governs only Spotter Live's
     # realtime captions; recording audio never leaves this computer.
     try:
-        transcript = _local_whisper_transcribe(audio_bytes, filename, content_type, model_name, progress_callback=progress_callback)
+        with TRANSCRIPTION_RUN_LOCK:
+            transcript = _local_whisper_transcribe(audio_bytes, filename, content_type, model_name, progress_callback=progress_callback)
         if not transcript:
             return {"ok": False, "error": "Local Whisper returned an empty transcript."}
         return {"ok": True, "transcript": transcript, "model": model_name, "mode": "local-whisper"}
@@ -3312,35 +3588,34 @@ def _perform_transcription(audio_bytes: bytes, filename: str, content_type: str,
 
 @app.post("/api/transcribe-audio")
 async def transcribe_audio(request: Request):
-    upload_type = str(request.headers.get("content-type", "")).split(";", 1)[0].strip().lower()
-    if upload_type == "application/octet-stream":
-        filename = unquote(str(request.headers.get("x-skate-filename", "recording.webm"))).strip() or "recording.webm"
-        content_type = str(request.headers.get("x-skate-content-type", "")).strip() or mimetypes.guess_type(filename)[0] or "audio/webm"
-        requested_model = str(request.headers.get("x-skate-model", "")).strip()
-        audio_bytes = await request.body()
-    else:
-        # Backwards compatibility for Spotter and previously opened note tabs.
-        try:
-            payload = json.loads((await request.body()).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return {"ok": False, "error": "Could not read the recording upload."}
-
-        filename = str(payload.get("filename", "recording.webm")).strip() or "recording.webm"
-        content_type = str(payload.get("content_type", "")).strip() or mimetypes.guess_type(filename)[0] or "audio/webm"
-        requested_model = str(payload.get("model", "")).strip()
-        data_url = str(payload.get("data", ""))
-        if "," in data_url:
-            data_url = data_url.split(",", 1)[1]
-        try:
-            audio_bytes = base64.b64decode(data_url, validate=True)
-        except (ValueError, base64.binascii.Error):
-            return {"ok": False, "error": "The recording file could not be decoded."}
-    if not audio_bytes:
-        return {"ok": False, "error": "The recording file was empty."}
-    if len(audio_bytes) > MAX_LOCAL_AUDIO_BYTES:
-        return {"ok": False, "error": "Audio and video recordings must be 250 MB or smaller for local SKATE transcription."}
-
-    return _perform_transcription(audio_bytes, filename, content_type, requested_model)
+    path = None
+    try:
+        upload_type = str(request.headers.get("content-type", "")).split(";", 1)[0].lower()
+        if upload_type == "application/octet-stream":
+            filename = unquote(request.headers.get("x-skate-filename", "recording.webm"))
+            content_type = request.headers.get("x-skate-content-type", "") or mimetypes.guess_type(filename)[0] or "audio/webm"
+            model = request.headers.get("x-skate-model", "")
+            path = await receive_recording(request, _audio_upload_limit())
+            source = path
+        else:
+            # Compatibility for short microphone clips in previously opened tabs.
+            path = await receive_recording(request, 16 * 1024 * 1024, ".json")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            filename = str(payload.get("filename", "recording.webm"))
+            content_type = str(payload.get("content_type", "audio/webm"))
+            model = str(payload.get("model", ""))
+            encoded = str(payload.get("data", "")).split(",", 1)[-1]
+            source = base64.b64decode(encoded, validate=True)
+            if not source:
+                raise UploadProblem("The recording file was empty.")
+        return await asyncio.to_thread(_perform_transcription, source, filename, content_type, model)
+    except UploadProblem as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=exc.status)
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        return JSONResponse({"ok": False, "error": "Could not read the recording upload."}, status_code=400)
+    finally:
+        if path:
+            path.unlink(missing_ok=True)
 
 
 def _update_transcription_job(job_id: str, **changes) -> None:
@@ -3354,7 +3629,7 @@ def _update_transcription_job(job_id: str, **changes) -> None:
         job["updated_at"] = time.time()
 
 
-def _run_transcription_job(job_id: str, audio_bytes: bytes, filename: str, content_type: str, requested_model: str) -> None:
+def _run_transcription_job(job_id: str, audio_bytes: bytes | Path, filename: str, content_type: str, requested_model: str) -> None:
     def progress(percent: int, phase: str) -> None:
         _update_transcription_job(job_id, progress=percent, phase=phase, status="working")
 
@@ -3375,22 +3650,23 @@ def _run_transcription_job(job_id: str, audio_bytes: bytes, filename: str, conte
             _update_transcription_job(job_id, status="error", phase="Transcription stopped", error=result.get("error", "Transcription failed."))
     except Exception as exc:  # noqa: BLE001
         _update_transcription_job(job_id, status="error", phase="Transcription stopped", error=str(exc))
+    finally:
+        if isinstance(audio_bytes, Path):
+            audio_bytes.unlink(missing_ok=True)
 
 
 @app.post("/api/transcription-jobs")
 async def start_transcription_job(request: Request):
-    audio_bytes = await request.body()
+    try:
+        audio_bytes = await receive_recording(request, _audio_upload_limit())
+    except UploadProblem as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=exc.status)
     filename = unquote(str(request.headers.get("x-skate-filename", "recording.webm"))).strip() or "recording.webm"
     content_type = str(request.headers.get("x-skate-content-type", "")).strip() or mimetypes.guess_type(filename)[0] or "audio/webm"
     requested_model = str(request.headers.get("x-skate-model", "")).strip()
-    if not audio_bytes:
-        return JSONResponse({"ok": False, "error": "The recording file was empty."}, status_code=400)
-    if len(audio_bytes) > MAX_LOCAL_AUDIO_BYTES:
-        return JSONResponse({"ok": False, "error": "Audio and video recordings must be 250 MB or smaller for local SKATE transcription."}, status_code=413)
-
     now = time.time()
     with TRANSCRIPTION_JOBS_LOCK:
-        expired = [key for key, value in TRANSCRIPTION_JOBS.items() if now - float(value.get("updated_at", now)) > 3600]
+        expired = [key for key, value in TRANSCRIPTION_JOBS.items() if value.get("status") in {"complete", "error"} and now - float(value.get("updated_at", now)) > 3600]
         for key in expired:
             TRANSCRIPTION_JOBS.pop(key, None)
         job_id = uuid.uuid4().hex
@@ -3404,12 +3680,17 @@ async def start_transcription_job(request: Request):
             "updated_at": now,
         }
 
-    threading.Thread(
-        target=_run_transcription_job,
-        args=(job_id, audio_bytes, filename, content_type, requested_model),
-        daemon=True,
-        name=f"skate-transcription-{job_id[:8]}",
-    ).start()
+    try:
+        threading.Thread(
+            target=_run_transcription_job,
+            args=(job_id, audio_bytes, filename, content_type, requested_model),
+            daemon=True,
+            name=f"skate-transcription-{job_id[:8]}",
+        ).start()
+    except RuntimeError:
+        audio_bytes.unlink(missing_ok=True)
+        _update_transcription_job(job_id, status="error", error="The local transcription worker could not start.")
+        return JSONResponse({"ok": False, "error": "The local transcription worker could not start. Try again."}, status_code=503)
     return {"ok": True, "job_id": job_id}
 
 
@@ -3449,6 +3730,7 @@ async def transcription_health():
         "base_model": "base.pt" in model_files or "base" in fw_models,
         "engine": "faster-whisper" if has_faster_whisper else ("openai-whisper" if has_classic_whisper else ""),
         "frozen": bool(getattr(sys, "frozen", False)),
+        "max_upload_bytes": _audio_upload_limit(),
     }
 
 
@@ -3554,44 +3836,12 @@ async def elevenlabs_voices(request: Request):
 @app.post("/api/summarize-transcript")
 async def summarize_transcript(request: Request):
     try:
-        payload = json.loads((await request.body()).decode("utf-8"))
-    except json.JSONDecodeError:
+        payload = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return {"ok": False, "error": "Could not read the transcript."}
-
-    title = str(payload.get("title", "")).strip() or "Untitled"
-    transcript = str(payload.get("transcript", "")).strip()
-    if not transcript:
-        return {"ok": False, "error": "No transcript text found to summarize."}
-
-    fallback = _local_transcript_summary(title, transcript)
-    settings = _load_settings()
-    if not _llm_available(settings):
-        return {
-            "ok": True,
-            "summary": fallback,
-            "markdown": _transcript_summary_markdown(fallback),
-            "message": f"{_llm_unavailable_reason(settings)}, so SKATE used local transcript summarization.",
-        }
-
-    try:
-        response_text = _call_llm(settings, _transcript_summary_prompt(title, transcript))
-        raw = _extract_json_object(response_text)
-        summary = _normalize_transcript_summary(raw, fallback)
-        summary["provider"] = settings["provider"]
-        summary["model"] = settings["model"]
-        return {
-            "ok": True,
-            "summary": summary,
-            "markdown": _transcript_summary_markdown(summary),
-            "message": f"Clean meeting notes added using {settings['provider']} / {settings['model']}.",
-        }
-    except (ValueError, KeyError, json.JSONDecodeError, HTTPError, URLError, TimeoutError, OSError) as e:
-        return {
-            "ok": True,
-            "summary": fallback,
-            "markdown": _transcript_summary_markdown(fallback),
-            "message": f"AI summarization failed, so SKATE used local transcript summarization. {e}",
-        }
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "Could not read the transcript."}
+    return await _reviewed_summary(payload, "summary")
 
 
 @app.get("/spotter", response_class=HTMLResponse)
@@ -3641,15 +3891,17 @@ async def spotter_api(request: Request):
     mode = _spotter_mode(str(payload.get("mode", "")))
     session = str(payload.get("session", "")).strip()
     session_label = str(payload.get("session_label", "")).strip()
-    fallback = _local_spotter_response(mode, text)
+    review = note_quality.screen(text, session_label or session)
+    text = review["text"]
+    fallback = _local_spotter_response(mode, text, session_label or session)
     settings = _load_settings()
     result = fallback
     message = ""
 
-    if _llm_available(settings):
+    if text and _llm_available(settings):
         try:
             session_context = _spotter_session_context(session, text)
-            response_text = _call_llm(_feature_settings(settings, "spotter"), _spotter_prompt(mode, text, session_label or session, session_context, settings))
+            response_text = await asyncio.to_thread(_call_llm, _feature_settings(settings, "spotter"), _spotter_prompt(mode, text, session_label or session, session_context, settings))
             result = _normalize_spotter_response(_extract_json_object(response_text), fallback, mode)
             result["provider"] = settings["provider"]
             result["model"] = _active_model(_feature_settings(settings, "spotter"))
@@ -3658,6 +3910,10 @@ async def spotter_api(request: Request):
     else:
         message = f"{_llm_unavailable_reason(settings)}, so SKATE used local Spotter coaching."
 
+    result = note_quality.guard_result(result, session_label or session)
+    if not text:
+        return {"ok": True, "result": result, "markdown": "", "create_url": "",
+                "message": "Only off-topic conversation was found. Nothing was prepared for the vault."}
     markdown_body = _spotter_markdown(result)
     create_url = "/new?" + urlencode(
         {
@@ -3725,8 +3981,8 @@ def spotter_live_page(request: Request):
 # ---------------------------------------------------------------------------
 # Meeting recorder: capture what this PC hears (WASAPI loopback) plus the
 # microphone, transcribe locally with Whisper, and save the result as a note.
-# Runs server-side, so navigating away from the page does not stop it - but
-# closing the SKATE window shuts the server down, recording included. Works
+# Runs server-side, so navigating away or hiding the desktop window in the
+# tray does not stop it. Exit SKATE shuts down the server and recording. Works
 # with any meeting app (Teams, Zoom, Meet, Webex) because it never touches
 # the meeting itself: no tenant, no calendar, no bot joining the call.
 
@@ -3796,15 +4052,33 @@ def _recorder_wav_bytes(loopback_chunks: list, mic_chunks: list) -> bytes:
     return buffer.getvalue()
 
 
-def _recorder_note_body(title: str, transcript: str, include_mic: bool, model_name: str) -> str:
+def _recorder_note_body(title: str, transcript: str, include_mic: bool, model_name: str, audio_filename: str = "") -> str:
     sources = "system audio + microphone" if include_mic else "system audio"
     stamp = time.strftime("%Y-%m-%d %H:%M")
+    audio_link = (
+        f"[Download recording (WAV)]({ATTACHMENTS_DIR_NAME}/{quote(audio_filename)})\n\n"
+        if audio_filename else ""
+    )
     return (
         f"# {title}\n\n"
         f"Recorded from {sources} on {stamp}. Transcribed locally with Whisper ({model_name}); "
         f"nothing left this computer.\n\n"
+        f"{audio_link}"
         f"## Transcript\n\n{transcript.strip()}\n"
     )
+
+
+def _recorder_save_audio(session: str, wav_bytes: bytes) -> Path:
+    directory = _attachment_dir(session)
+    directory.mkdir(parents=True, exist_ok=True)
+    filename = f"recording-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:12]}.wav"
+    path = directory / filename
+    # Exclusive creation prevents a second recording from replacing an earlier one.
+    with path.open("xb") as output:
+        output.write(wav_bytes)
+        output.flush()
+        os.fsync(output.fileno())
+    return path
 
 
 def _recorder_save_note(session: str, session_label: str, body: str, title: str) -> str:
@@ -3833,6 +4107,10 @@ def _recorder_finalize(include_mic: bool, session: str, session_label: str, mode
         if not wav_bytes:
             problems = "; ".join(state.get("errors", [])) or "no audio was captured"
             raise RuntimeError(problems)
+        audio_path = _recorder_save_audio(session, wav_bytes)
+        del wav_bytes
+        audio_id = audio_path.relative_to(CONVERSATIONS).as_posix()
+        state.update({"audio": audio_id, "audio_url": f"/entry/{audio_id}"})
         state["state"] = "transcribing"
         state["progress"] = 0
 
@@ -3841,22 +4119,17 @@ def _recorder_finalize(include_mic: bool, session: str, session_label: str, mode
             state["phase"] = phase
 
         transcript = _faster_whisper_transcribe(
-            wav_bytes, "meeting-recording.wav", "audio/wav", model_name, on_progress
+            audio_path, audio_path.name, "audio/wav", model_name, on_progress
         )
         title = f"Meeting recording {time.strftime('%Y-%m-%d %H:%M')}"
-        body = _recorder_note_body(title, transcript or "(no speech detected)", include_mic, model_name)
+        body = _recorder_note_body(title, transcript or "(no speech detected)", include_mic, model_name, audio_path.name)
         file_id = _recorder_save_note(session, session_label, body, title)
         state.update({"state": "saved", "note": file_id, "url": f"/entry/{file_id}"})
     except Exception as exc:
         rescue = ""
         try:
-            if wav_bytes := locals().get("wav_bytes"):
-                slug = _slugify(session) or "unassigned"
-                rescue_dir = CONVERSATIONS / slug / ATTACHMENTS_DIR_NAME
-                rescue_dir.mkdir(parents=True, exist_ok=True)
-                rescue_path = rescue_dir / f"recording-{time.strftime('%Y%m%d-%H%M%S')}.wav"
-                rescue_path.write_bytes(wav_bytes)
-                rescue = f" The audio was saved to {rescue_path.name} in the session's attachments."
+            if state.get("audio"):
+                rescue = f" The audio is saved as {Path(state['audio']).name} in the session's attachments. Download it below to retry transcription."
             errors = "; ".join(RECORDER.get("errors", []))
             detail = f"{exc}" + (f" ({errors})" if errors else "")
         except Exception:
@@ -3914,15 +4187,15 @@ async def recorder_start(request: Request):
     return JSONResponse({"ok": True})
 
 
-@app.post("/api/recorder/stop")
-async def recorder_stop():
+def _recorder_request_stop() -> bool:
+    """Stop capture once and save in the background, from the page or tray."""
     with RECORDER_LOCK:
         if RECORDER.get("state") != "recording":
-            return JSONResponse({"ok": False, "error": "No recording is running."}, status_code=409)
-        RECORDER["state"] = "stopping"
-        RECORDER["stop_event"].set()
+            return False
         settings = _load_settings()
         model_name = settings.get("transcription_model", "base")
+        RECORDER["state"] = "stopping"
+        RECORDER["stop_event"].set()
         threading.Thread(
             target=_recorder_finalize,
             args=(
@@ -3933,25 +4206,41 @@ async def recorder_stop():
             ),
             daemon=True,
         ).start()
+    return True
+
+
+@app.post("/api/recorder/stop")
+async def recorder_stop():
+    if not _recorder_request_stop():
+        return JSONResponse({"ok": False, "error": "No recording is running."}, status_code=409)
     return JSONResponse({"ok": True})
+
+
+def _recorder_status_payload() -> dict:
+    # Starting a new recording clears RECORDER; use one coherent snapshot.
+    with RECORDER_LOCK:
+        recorder = dict(RECORDER)
+    state = recorder.get("state", "idle")
+    payload = {"state": state}
+    if recorder.get("audio"):
+        payload.update(audio=recorder["audio"], audio_url=recorder["audio_url"])
+    if state == "recording":
+        payload["elapsed"] = max(0, int(time.time() - recorder.get("started_at", time.time())))
+        payload["warnings"] = list(recorder.get("errors", []))
+    if state == "transcribing":
+        payload["progress"] = recorder.get("progress", 0)
+        payload["phase"] = recorder.get("phase", "")
+    if state == "saved":
+        payload["note"] = recorder.get("note", "")
+        payload["url"] = recorder.get("url", "")
+    if state == "error":
+        payload["error"] = recorder.get("error", "")
+    return payload
 
 
 @app.get("/api/recorder/status")
 def recorder_status():
-    state = RECORDER.get("state", "idle")
-    payload = {"state": state}
-    if state == "recording":
-        payload["elapsed"] = int(time.time() - RECORDER.get("started_at", time.time()))
-        payload["warnings"] = list(RECORDER.get("errors", []))
-    if state == "transcribing":
-        payload["progress"] = RECORDER.get("progress", 0)
-        payload["phase"] = RECORDER.get("phase", "")
-    if state == "saved":
-        payload["note"] = RECORDER.get("note", "")
-        payload["url"] = RECORDER.get("url", "")
-    if state == "error":
-        payload["error"] = RECORDER.get("error", "")
-    return JSONResponse(payload)
+    return JSONResponse(_recorder_status_payload())
 
 
 @app.post("/api/spotter-live/append")
@@ -4021,12 +4310,18 @@ async def spotter_live_ask(request: Request):
     path = _safe_transcript_path(str(payload.get("file", "")))
     if path is not None and path.exists():
         transcript = path.read_text(encoding="utf-8")
-    # Keep the prompt bounded for very long workshops: most recent ~24k chars.
-    transcript_tail = transcript[-24000:]
+    # Screen the whole transcript before selecting bounded workshop evidence.
+    review = note_quality.screen(transcript, str(payload.get("focus", "")))
+    transcript_tail, _ = _select_body_excerpt(review["text"], 24000)
 
     settings = _load_settings()
     if not _llm_available(settings):
-        return {"ok": False, "error": f"{_llm_unavailable_reason(settings)}, so Spotter Live cannot answer."}
+        extracted = note_quality.local_signals(review["text"], str(payload.get("focus", "")))
+        query = question.lower()
+        key = "actions" if "action" in query or "next step" in query else "pain_points" if "pain" in query or "problem" in query else "questions" if "question" in query else "observations"
+        evidence = extracted[key]
+        answer = " ".join(evidence[:4]) if evidence else "No matching workshop signals were found. Review the transcript for details."
+        return {"ok": True, "answer": answer, "mode": "local", "message": "Local extraction; no AI interpretation."}
 
     name = settings.get("spotter_name", "Spotter")
     persona = settings.get("spotter_persona", "")
@@ -4036,6 +4331,7 @@ async def spotter_live_ask(request: Request):
         return (
             f"You are {name} Live, a real-time workshop copilot for a facilitator.\n"
             + persona_block
+            + note_quality.WRITING_RULES + "\n" + note_quality.RELEVANCE_RULES + "\n"
             + "Below is the live transcript of the room captured so far. Treat it as your "
             "primary knowledge of what has happened in this workshop. Ground your answer "
             "in specifics from the transcript whenever they exist.\n\n"
@@ -4048,11 +4344,11 @@ async def spotter_live_ask(request: Request):
 
     answer = ""
     try:
-        answer = _spotter_live_clean_answer(_call_llm(_feature_settings(settings, "spotter"), _live_prompt(True)))
+        answer = _spotter_live_clean_answer(await asyncio.to_thread(_call_llm, _feature_settings(settings, "spotter"), _live_prompt(True)))
         if not answer and persona:
             # The persona's JSON formatting rules can win over the prose
             # instruction and yield {} — retry once without the persona.
-            answer = _spotter_live_clean_answer(_call_llm(_feature_settings(settings, "spotter"), _live_prompt(False)))
+            answer = _spotter_live_clean_answer(await asyncio.to_thread(_call_llm, _feature_settings(settings, "spotter"), _live_prompt(False)))
     except (ValueError, KeyError, json.JSONDecodeError, HTTPError, URLError, TimeoutError, OSError) as e:
         return {"ok": False, "error": f"Spotter Live could not reach the model. {e}"}
     if not answer:
@@ -4438,6 +4734,32 @@ def graph_alias():
     return RedirectResponse(url="/grind", status_code=301)
 
 
+@app.get("/theme-boards/{filename}")
+def theme_board_image(filename: str):
+    if filename not in {row[2] for row in ui_themes.PALETTES}:
+        return Response(status_code=404)
+    path = SKATE_ROOT / "theme-boards" / filename
+    if not path.is_file():
+        path = STATIC_DIR / "skateboards" / filename
+    return FileResponse(path) if path.is_file() else Response(status_code=404)
+
+
+@app.post("/api/theme-boards/open")
+def open_theme_boards():
+    folder = SKATE_ROOT / "theme-boards"
+    folder.mkdir(parents=True, exist_ok=True)
+    for row in ui_themes.PALETTES:
+        target = folder / row[2]
+        if not target.exists():
+            shutil.copy2(STATIC_DIR / "skateboards" / row[2], target)
+    palette_path = folder / "themes.json"
+    if not palette_path.exists():
+        palette_path.write_text(json.dumps({row[0]: dict(zip(ui_themes.COLORS, row[4])) for row in ui_themes.PALETTES}, indent=2), encoding="utf-8")
+    if sys.platform == "win32":
+        os.startfile(str(folder))
+    return {"ok": True, "path": str(folder)}
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, saved: str | None = Query(default=None)):
     settings = _load_settings()
@@ -4467,6 +4789,13 @@ async def save_settings(request: Request):
 
     provider = str(form.get("provider", settings.get("provider", "openai"))).strip()
     settings["provider"] = provider if provider in LLM_PROVIDERS else "openai"
+    if form.get("ui_theme") in {row[0] for row in ui_themes.PALETTES}:
+        settings["ui_theme"] = form["ui_theme"]
+    if "recording_upload_limit_mb" in form:
+        try:
+            settings["recording_upload_limit_mb"] = max(250, min(4096, int(form["recording_upload_limit_mb"])))
+        except (TypeError, ValueError):
+            settings["recording_upload_limit_mb"] = 2048
     settings["model"] = model
     anthropic_model = str(form.get("anthropic_model", settings.get("anthropic_model", ""))).strip()
     valid_anthropic = {item["id"] for item in ANTHROPIC_MODEL_OPTIONS}
@@ -4668,7 +4997,13 @@ async def onenote_import_run(request: Request):
 @app.get("/about", response_class=HTMLResponse)
 def about(request: Request):
     sidebar = _sidebar_context()
+    sidebar["capture_marker_labels"] = CAPTURE_MARKER_LABELS
     return TEMPLATES.TemplateResponse(request, "about.html", sidebar)
+
+
+@app.get("/about/recording", response_class=HTMLResponse)
+def recording_guide(request: Request):
+    return TEMPLATES.TemplateResponse(request, "recording_guide.html", _sidebar_context())
 
 
 @app.get("/debug/vault", response_class=HTMLResponse)
@@ -4734,6 +5069,8 @@ def _open_skate_window(
             if extra_args not in existing:
                 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (existing + " " + extra_args).strip()
         import webview
+        # WebView2 otherwise cancels attachment downloads without a prompt.
+        webview.settings["ALLOW_DOWNLOADS"] = True
     except ImportError:
         return False
 
@@ -4772,11 +5109,68 @@ def _open_skate(url: str, app_window: bool):
         pass
 
 
+def _tray_record_image():
+    """Draw a crisp record button that remains visible on either tray color."""
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+    ImageDraw.Draw(image).ellipse((28, 28, 228, 228), fill="#d64545", outline="#f8fafc", width=8)
+    return image.resize((64, 64), Image.Resampling.LANCZOS)
+
+
+def _tray_idle_image():
+    """Reuse the application's skateboard artwork for the idle tray icon."""
+    from PIL import Image
+
+    with Image.open(STATIC_DIR / "favicon.ico") as image:
+        return image.convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
+
+
+def _tray_recorder_tooltip(status: dict | None = None) -> str:
+    status = _recorder_status_payload() if status is None else status
+    state = status["state"]
+    if state == "recording":
+        elapsed = status["elapsed"]
+        hours, remainder = divmod(elapsed, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        warning = " — Check audio in SKATE" if status.get("warnings") else ""
+        return f"SKATE — Recording {hours:02}:{minutes:02}:{seconds:02}{warning}"
+    detail = {
+        "stopping": "Preparing transcript",
+        "transcribing": f"Transcribing {max(0, min(100, int(status.get('progress', 0))))}%",
+        "saved": "Audio & transcript saved",
+        "error": "Recording failed; open SKATE",
+    }.get(state)
+    return "SKATE — Not recording" + (f" — {detail}" if detail else "")
+
+
+def _tray_can_stop_recording(item=None) -> bool:
+    with RECORDER_LOCK:
+        return RECORDER.get("state") == "recording"
+
+
+def _tray_stop_recording(icon, item):
+    _recorder_request_stop()
+
+
+def _sync_tray_recording(icon, idle_image, record_image):
+    """Refresh status without recreating the native icon on every clock tick."""
+    status = _recorder_status_payload()
+    image = record_image if status["state"] == "recording" else idle_image
+    if icon.icon is not image:
+        icon.icon = image
+        icon.update_menu()
+    title = _tray_recorder_tooltip(status)
+    if icon.title != title:
+        icon.title = title
+
+
 def _launch_with_tray(host: str, port: int, open_browser: bool, app_window: bool):
     """Launch SKATE with a system tray icon. Server runs in background thread."""
     try:
         import pystray
-        from PIL import Image
+        idle_image = _tray_idle_image()
+        record_image = _tray_record_image()
     except ImportError as e:
         print(f"\n  WARNING: tray icon disabled ({e}).")
         print("  Install with: pip install pystray pillow")
@@ -4785,12 +5179,6 @@ def _launch_with_tray(host: str, port: int, open_browser: bool, app_window: bool
         return
 
     url = f"http://{host}:{port}"
-    icon_path = STATIC_DIR / "favicon.png"
-    if not icon_path.exists():
-        print(f"  WARNING: icon not found at {icon_path}, using default.")
-        image = Image.new("RGBA", (64, 64), (46, 94, 142, 255))
-    else:
-        image = Image.open(icon_path)
 
     server_holder: dict = {}
     server_thread = threading.Thread(
@@ -4841,6 +5229,10 @@ def _launch_with_tray(host: str, port: int, open_browser: bool, app_window: bool
 
     menu = pystray.Menu(
         pystray.MenuItem("Open SKATE", on_open, default=True),
+        pystray.MenuItem(
+            "Stop recording & save", _tray_stop_recording,
+            enabled=_tray_can_stop_recording,
+        ),
         pystray.MenuItem(f"Running at {url}", None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Exit SKATE", on_quit),
@@ -4848,14 +5240,21 @@ def _launch_with_tray(host: str, port: int, open_browser: bool, app_window: bool
 
     icon = pystray.Icon(
         "SKATE",
-        image,
-        f"SKATE — Scalable Knowledge Architecture & Technology Engine\n{url}",
+        record_image if _tray_can_stop_recording() else idle_image,
+        _tray_recorder_tooltip(),
         menu,
     )
 
+    def watch_recording_status():
+        while not quitting.wait(0.5):
+            if icon.visible:
+                _sync_tray_recording(icon, idle_image, record_image)
+
+    threading.Thread(target=watch_recording_status, daemon=True).start()
+
     print(f"\n  SKATE running at {url}")
     print(f"  Vault: {HERE.parent}")
-    print(f"  Look for the skateboard icon in your Windows tray.\n")
+    print("  The tray shows a skateboard when idle and a red circle while recording.\n")
 
     # Wait briefly so the server is ready before opening the UI.
     time.sleep(1.0)
@@ -4869,6 +5268,7 @@ def _launch_with_tray(host: str, port: int, open_browser: bool, app_window: bool
             window_holder=window_holder,
             quitting=quitting,
         ):
+            quitting.set()
             icon.stop()
             srv = server_holder.get("server")
             if srv is not None:
@@ -4882,6 +5282,7 @@ def _launch_with_tray(host: str, port: int, open_browser: bool, app_window: bool
     icon.run()  # Blocks the main thread. Returns when Exit SKATE is clicked.
 
     # After tray exits, give the server a moment to clean up
+    quitting.set()
     srv = server_holder.get("server")
     if srv is not None:
         srv.should_exit = True

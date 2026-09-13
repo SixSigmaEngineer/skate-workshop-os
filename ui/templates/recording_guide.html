@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Recording & transcription guide · SKATE{% endblock %}
+{% block content %}
+<article class="recording-guide markdown">
+  <header class="guide-hero">
+    <p class="eyebrow">The SKATE field guide</p>
+    <h1>Record the meeting.<br>Keep the signal.</h1>
+    <p class="guide-lead">Turn a Zoom, Teams, Meet, or Webex conversation into local notes, connected evidence, and actions you can land. No meeting bot. No SKATE subscription.</p>
+    <div class="toolbar">
+      <a class="button primary" href="/spotter-live#meeting-recorder"><span class="record-dot" aria-hidden="true"></span> Open Record a Meeting</a>
+      <a class="button" href="/about">Back to Info</a>
+    </div>
+  </header>
+
+  <nav class="guide-nav" aria-label="Recording guide sections">
+    <a href="#record">Record a meeting</a>
+    <a href="#audio">What gets captured</a>
+    <a href="#other-options">Captions &amp; uploads</a>
+    <a href="#privacy">Privacy &amp; cost</a>
+    <a href="#comparison">SKATE &amp; Granola</a>
+    <a href="#benchmarks">Benchmarks</a>
+    <a href="#help">Troubleshooting</a>
+  </nav>
+
+  <section aria-labelledby="flow-title">
+    <h2 id="flow-title">How a meeting becomes memory</h2>
+    <ol class="guide-flow">
+      <li><strong>1. Capture on this PC</strong><span>Default playback audio, plus the default microphone if you include it.</span></li>
+      <li><strong>2. Transcribe after stopping</strong><span>Local Whisper turns the captured speech into text on your computer.</span></li>
+      <li><strong>3. Save, review, connect</strong><span>A note lands in your session. Review it, connect evidence, and track the actions.</span></li>
+    </ol>
+    <p>The meeting recorder produces its transcript <strong>after you select Stop &amp; save note</strong>. For microphone captions during the conversation, use the separate <a href="#other-options">Start listening option</a>.</p>
+  </section>
+
+  <section id="record" aria-labelledby="record-title">
+    <h2 id="record-title">Your first meeting, step by step</h2>
+    <p>Use SKATE on Windows with its local transcription engine installed. The selected Whisper model downloads on first use; make a short test recording while online before relying on it offline. No AI API key is needed for the meeting recorder.</p>
+    <ol class="guide-steps">
+      <li><strong>Set up the sound.</strong> Join your meeting and use the Windows default speakers or headphones for playback. Make the microphone you want to record the Windows default input. Let participants know you are recording and follow the meeting’s recording policy. A headset helps avoid speaker echo.</li>
+      <li><strong>Choose where the note belongs.</strong> Open <a href="/spotter-live#meeting-recorder">Record a Meeting</a>. In <strong>Session</strong>, choose an existing session or <strong>+ Create a new session…</strong>. Enter a name and select <strong>Create session</strong>; SKATE selects it for you. Keep <strong>include my microphone</strong> checked to capture your voice too.</li>
+      <li><strong>Start and check the status.</strong> Select <strong>Start recording</strong>. Look for the pulsing red dot and <strong>Recording</strong> with an elapsed time beside the controls. Check any warning shown there. Opening Spotter Live alone does not start recording.</li>
+      <li><strong>Stop, then let SKATE finish.</strong> At the end of the meeting, select <strong>Stop &amp; save note</strong>. The status changes through finishing and transcribing to <strong>Saved</strong>. Keep SKATE running until the link to your saved note appears. Ending the Zoom or Teams call does not automatically stop SKATE.</li>
+      <li><strong>Review and land the next move.</strong> Open the saved note. Use <strong>Clean/Compress Notes</strong>, add a workshop focus if helpful, and review the proposal and excluded chatter. Edit the proposal, choose <strong>Use reviewed notes</strong>, then <strong>Save note</strong>. The original text is attached when you apply cleanup. Connect findings in The GRIND and promote actions into The Lineup.</li>
+    </ol>
+    <div class="guide-callout">
+      <strong>Close to tray. Keep the meeting running.</strong>
+      <p>With the desktop tray app, closing the SKATE window hides it while the meeting recorder keeps running. The tray shows a skateboard when not recording and a red circle during capture. Hover for recording status and elapsed time, or transcription progress after stopping. Right-click for <strong>Open SKATE</strong> or <strong>Stop recording &amp; save</strong>. Stopping saves the WAV audio, then transcribes locally and saves a linked note in your chosen session. Keep SKATE running until the tooltip says <strong>Audio &amp; transcript saved</strong>. <strong>Exit SKATE</strong> ends the app, so stop and save first. Keep the computer awake throughout capture and transcription.</p>
+      <p>If there is no tray icon, keep the SKATE window open. For source testing, <strong>Start SKATE.pyw</strong> uses the tray; <strong>Start SKATE.bat</strong> runs without it.</p>
+    </div>
+  </section>
+
+  <section id="audio" aria-labelledby="audio-title">
+    <h2 id="audio-title">What audio is SKATE capturing?</h2>
+    <div class="guide-cards">
+      <section>
+        <h3>What the PC plays</h3>
+        <p>The meeting recorder captures the combined sound sent to the Windows default playback device. That includes the meeting’s remote voices and any music, videos, or notifications playing through that device. Close unrelated audio before starting.</p>
+      </section>
+      <section>
+        <h3>What your microphone hears</h3>
+        <p>With <strong>include my microphone</strong> checked, SKATE adds the Windows default microphone. This can include your voice and nearby conversation. Muting yourself inside the meeting app does not mute SKATE’s separate microphone capture. Uncheck the option before starting if you want only PC playback.</p>
+      </section>
+    </div>
+    <p>SKATE does not isolate a single app, join the call, connect a calendar, or capture the meeting’s video or shared screen. Audio sent only to a different output device may be missed. The PC recorder uses Windows default devices; the microphone selector in SKATE’s Voice settings applies to browser-based voice features.</p>
+    <p>The local recording transcript is combined text without speaker names. The red recording status confirms that capture was started; it is not a sound-level meter or a guarantee that both audio sources are audible. A short test is the best way to check your setup.</p>
+  </section>
+
+  <section id="other-options" aria-labelledby="options-title">
+    <h2 id="options-title">Live captions or a recording you already have</h2>
+    <div class="guide-cards">
+      <section>
+        <h3>Start listening: room captions</h3>
+        <p>Use <strong>Start listening</strong> on Spotter Live for microphone captions and questions about the room transcript. Select the captions engine in <a href="/settings">Settings → Voice</a>. Local Whisper processes short segments on this PC; OpenAI and ElevenLabs send microphone audio to their services. ElevenLabs can provide speaker labels when returned by the service.</p>
+        <p><strong>Keep Spotter Live open while listening.</strong> Navigating away stops this page’s microphone listener. It is separate from the PC meeting recorder that can continue in the tray. The running room transcript is written to the vault’s <code>transcripts</code> folder.</p>
+      </section>
+      <section>
+        <h3>Transcribe Recording: file import</h3>
+        <p>Open <a href="/new">New Note</a> or edit a note. Drop an audio or video file in the recording area, choose a Whisper model, then select <strong>Transcribe Recording</strong>. Review the inserted transcript, choose the session, and <strong>Save note</strong>. Use <strong>Summarize Transcript</strong> or cleanup for a reviewed proposal.</p>
+        <p>Your current upload limit is <strong>{{ settings.recording_upload_limit_mb }} MB</strong>. Change it in <a href="/settings">Settings</a>, up to 4,096 MB with the faster-whisper engine. Long files are transcribed locally in ten-minute sections. Processing speed depends on your PC and selected model.</p>
+      </section>
+    </div>
+    <p>For a Zoom recording you already have, import its audio or video file through New Note. For a meeting happening now, SKATE’s PC recorder uses the sound reaching your computer and does not depend on Zoom’s built-in cloud-transcript feature.</p>
+  </section>
+
+  <section id="privacy" aria-labelledby="privacy-title">
+    <h2 id="privacy-title">Free, open source, and under your control</h2>
+    <p><strong>SKATE is free and open source under the MIT license.</strong> You can inspect, modify, and share the application under that license. Local recording, transcription, notes, graph exploration, keyword retrieval, and deterministic synthesis require no SKATE subscription. Optional cloud AI and voice providers may charge your account for usage. Your hardware, storage, and local model setup are yours to manage.</p>
+    <ul>
+      <li><strong>Recording and file transcription:</strong> speech processing stays on this PC. Model downloads need an internet connection the first time; downloading the model does not upload your recording.</li>
+      <li><strong>Notes:</strong> the meeting recorder saves a markdown note in the selected session. You can edit it, copy its text, or use <strong>Print / Save PDF</strong> on a note or session.</li>
+      <li><strong>Audio retention:</strong> stopping a meeting recording saves its WAV audio in the selected session’s <code>attachments</code> folder before transcription begins. The finished markdown note links to that audio; Spotter Live also offers separate transcript and audio links. If transcription fails, the saved WAV remains available to download and retry. Audio stays on this PC and uses about 115 MB of disk space per hour. This applies to the PC meeting recorder; imported files are processed temporarily, so keep their originals separately.</li>
+      <li><strong>Optional cloud features:</strong> AI cleanup and synthesis send relevant text to the selected provider. Cloud live captions send audio; cloud speech output sends text. Choose local options or disable those features for a local workflow.</li>
+    </ul>
+    <p><a href="https://github.com/SixSigmaEngineer/skate-workshop-os" target="_blank" rel="noopener">SKATE source repository and MIT license</a></p>
+  </section>
+
+  <section id="comparison" aria-labelledby="comparison-title">
+    <h2 id="comparison-title">How SKATE differs from Granola</h2>
+    <p>Both can capture a meeting without a bot joining the call. SKATE puts local transcription, portable notes, typed evidence links, and workshop follow-through in one workspace. Granola offers a hosted meeting-notes workflow with live transcription and sharing features.</p>
+    <div class="guide-table-wrap" role="region" aria-label="SKATE and Granola comparison" tabindex="0">
+      <table class="guide-table">
+        <caption>Feature comparison checked September 12, 2026</caption>
+        <thead><tr><th scope="col">What matters</th><th scope="col">SKATE</th><th scope="col">Granola</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Cost and control</th><td>MIT-licensed application; no SKATE subscription. Optional provider usage can cost extra.</td><td>Free Basic tier with limited meeting history; paid tiers add features and history.</td></tr>
+          <tr><th scope="row">Meeting transcription</th><td>PC audio plus optional microphone, transcribed locally after stopping.</td><td>Live device-audio transcription through a transcription provider.</td></tr>
+          <tr><th scope="row">Existing recordings</th><td>Local audio and video file transcription in the note editor.</td><td>The transcription guide says prerecorded file imports are unsupported.</td></tr>
+          <tr><th scope="row">Speaker labels</th><td>No speaker names in local meeting recordings. Optional ElevenLabs labels in room captions.</td><td>Speaker tags for supported meeting platforms and setups.</td></tr>
+          <tr><th scope="row">Where the work goes</th><td>Markdown notes, explicit knowledge graph links, hybrid vector/keyword retrieval, GRIND synthesis, and Lineup actions.</td><td>Enhanced meeting notes, meeting chat, shared folders, and plan-dependent integrations.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="guide-source">Granola details come from its <a href="https://docs.granola.ai/help-center/taking-notes/transcription" target="_blank" rel="noopener">transcription documentation</a> and <a href="https://www.granola.ai/pricing" target="_blank" rel="noopener">pricing page</a>. Its <a href="https://www.granola.ai/blog/how-to-get-a-zoom-meeting-transcript-every-method-free-and-paid" target="_blank" rel="noopener">Zoom transcript overview</a> covers other approaches. Features and plans can change.</p>
+    <p>SKATE’s edge is what you can do with the evidence after capture: keep the original wording, review cleanup, trace supporting or conflicting findings, and give the resulting actions an owner. Its <a href="/about">human-factors design</a> supports that workflow.</p>
+  </section>
+
+  <section id="benchmarks" aria-labelledby="benchmarks-title">
+    <h2 id="benchmarks-title">Built for long prose. Measured on workshop evidence.</h2>
+    <div class="guide-result">
+      <strong>9 / 10</strong>
+      <p>A relevant note ranked first for nine of ten workshop queries in SKATE’s internal retrieval test—about 4.2× its chance baseline.</p>
+    </div>
+    <p>The September 2026 run used 25 active notes across two sessions and ten author-labelled queries with keyword-only retrieval. Mean reciprocal rank was 0.95. Separate long-text regression checks verify that cleanup reaches late actions and decisions instead of silently stopping at the beginning of the text.</p>
+    <details class="about-details">
+      <summary>What these results establish</summary>
+      <p>The retrieval test measures which saved notes are found, not speech-recognition accuracy or the quality of a full meeting summary. Its top-result hit rate has a wide exact 95% confidence interval of 55.5–99.7%. Long-text regression checks test specific behaviors; they are not a competitor leaderboard.</p>
+      <p>The SKATE website uses the positioning “#1 agent knowledge system for long prose.” The available internal results do not establish an independent #1 ranking for long prose or meeting transcripts. A comparative claim needs the named dataset, metric, competing systems, configurations, and results.</p>
+      <p>Run <code>python tools/benchmark_retrieval.py</code> from the source repository to reproduce retrieval results. <a href="/about#retrieval-benchmark">Read the Info tab’s benchmark notes</a>.</p>
+    </details>
+  </section>
+
+  <section id="help" aria-labelledby="help-title">
+    <h2 id="help-title">Get a clean run</h2>
+    <details class="about-details">
+      <summary>I can hear the call, but the transcript misses other people</summary>
+      <p>Check that the meeting app plays through the Windows default playback device. Headphones selected only inside the meeting app may differ from that default. Choose the devices before recording; stop and save before changing them, then start a new recording. The microphone-only Start listening option does not directly capture PC playback.</p>
+    </details>
+    <details class="about-details">
+      <summary>My voice is missing, doubled, or mixed with other sounds</summary>
+      <p>Before starting, check <strong>include my microphone</strong> and the Windows default input. Use a headset to reduce echo, close music or videos, and silence notification sounds. Keep microphones near the speakers and avoid people talking over each other. Review names, numbers, and commitments in the transcript.</p>
+    </details>
+    <details class="about-details">
+      <summary>Transcription is slow or asks to download a model</summary>
+      <p>The first run downloads the selected model. Let a short test finish while online. In Settings → Voice, choose a smaller Local Whisper model for a faster run on a modest PC. The meeting recorder starts transcription only after stopping; long recordings can take time. Keep SKATE open until <strong>Saved</strong> appears.</p>
+    </details>
+    <details class="about-details">
+      <summary>The local engine is missing, or recording failed</summary>
+      <p>Check the error beside the recorder. For a source installation, run the updated <strong>Start SKATE.bat</strong> once to install the current requirements, then close it and relaunch with <strong>Start SKATE.pyw</strong> if you want tray behavior. For an installed app, use a current build. If the audio was saved, select <strong>Download audio (WAV)</strong>, then import it through New Note to retry transcription.</p>
+    </details>
+    <details class="about-details">
+      <summary>Can I pause, switch sessions, or record back-to-back calls?</summary>
+      <p>The meeting recorder currently has Start and Stop &amp; save controls, without a pause/resume control. Stop and save between calls, then choose the next session and start again. Keep the PC awake. The current recording is held in memory before transcription, so an app exit, crash, or shutdown can lose an unfinished recording.</p>
+    </details>
+    <details class="about-details">
+      <summary>Where did my transcript go?</summary>
+      <p>For Record a Meeting, follow the saved-note link or open the chosen session and look for <strong>Meeting recording</strong> with its date and time. For an imported file, save the note after transcription. Start listening writes a separate running file in the vault’s <strong>transcripts</strong> folder; it does not automatically use the meeting recorder’s session dropdown.</p>
+    </details>
+  </section>
+
+  <footer class="guide-footer toolbar">
+    <a class="button primary" href="/spotter-live#meeting-recorder"><span class="record-dot" aria-hidden="true"></span> Record a Meeting</a>
+    <a class="button" href="/new">Import a recording</a>
+    <a class="button" href="/about">Back to Info</a>
+  </footer>
+</article>
+{% endblock %}

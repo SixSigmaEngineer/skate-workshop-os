@@ -3,6 +3,9 @@
 {% block content %}
 <style>
 .grind-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; }
+.grind-filters { display:flex; flex-wrap:wrap; align-items:end; }
+.grind-filters select { flex:1 1 240px; min-width:0; max-width:100%; }
+.grind-filters input[type="date"] { flex:0 1 140px; min-width:0; }
 .seg-toggle { display:inline-flex; border:1px solid #cdd7e2; border-radius:9px; overflow:hidden; }
 .seg-toggle .seg-btn { border:0; background:#fff; color:#445673; padding:8px 22px; font:inherit; font-weight:500; cursor:pointer; }
 .seg-toggle .seg-btn.active { background:#3f5d86; color:#fff; }
@@ -21,7 +24,24 @@
 .grind-callout.hidden { opacity:0; }
 .mind-map text { paint-order:stroke; stroke:#ffffff; stroke-width:3px; stroke-linejoin:round; }
 .mind-map .node-type { stroke:none; font-weight:750; }
-.graph-node-search-wrap { display:none; }
+.graph-node-search-wrap { display:block; margin-bottom:16px; }
+.graph-detail-status { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line, #dce5ef); font-size:12px; color:var(--muted, #66778d); }
+.graph-detail-status > span { flex:1; min-width:160px; }
+.graph-detail-status button, .signal-pager button { padding:5px 9px; font-size:12px; }
+.signal-browser { margin-top:18px; border-top:1px solid var(--line, #dce5ef); padding-top:14px; }
+.signal-browser[hidden], .signal-details[hidden], #notePages[hidden] { display:none; }
+.signal-browser h2 { margin:0 0 8px; }
+.signal-browser select { width:100%; margin:8px 0; font:inherit; font-size:12px; }
+.signal-count { font-size:12px; color:var(--muted, #66778d); }
+.signal-pager { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0; }
+.signal-pager span { flex:1; font-size:12px; }
+.signal-list { display:grid; gap:4px; max-height:340px; overflow-y:auto; overscroll-behavior:contain; }
+.signal-list .selected-neighbor { white-space:normal; overflow-wrap:anywhere; padding:7px; }
+.signal-list .selected-neighbor span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.grind-workspace { align-items:start; }
+.grind-workspace.compact-map { grid-template-columns:1fr; }
+.grind-workspace .legend-panel { max-height:calc(min(68vh, 680px) + 180px); }
+.graph-search-result, .selected-neighbor { color:var(--ink, #52667f); }
 .grind-workspace.mode-2d {
   gap:14px;
   overflow:visible;
@@ -135,6 +155,8 @@
 .mode-2d .map-node.is-focus .node-label,
 .mode-2d .map-node.is-selected .node-label { fill:#172b44; font-weight:700; }
 .mode-2d .edge-label { fill:#52667f; stroke:#f9fbfd; stroke-width:4px; }
+html[data-ui-dark="true"] .grind-workspace .seg-toggle .seg-btn { background:var(--panel); color:var(--ink); }
+html[data-ui-dark="true"] .grind-workspace .seg-toggle .seg-btn.active { background:var(--accent); color:var(--button-ink, #fff); }
 @media (max-width:900px) {
   .grind-workspace.mode-2d { grid-template-columns:1fr; }
 }
@@ -205,11 +227,11 @@
 {% endif %}
 
 <section class="grid stats grind-stats">
-  <div class="stat-tip" title="Memory objects on this map: every active note in the selected scope. Inactive notes and inactive sessions are excluded."><strong>{{ stats.node_count }}</strong><span>Entries</span></div>
-  <div class="stat-tip" title="All connections drawn on the map — evidence links plus theme links."><strong>{{ stats.edge_count }}</strong><span>Graph links</span></div>
+  <div class="stat-tip" title="Every active note available in this scope. Larger collections are browsed in pages. Inactive notes and sessions are excluded."><strong>{{ stats.node_count }}</strong><span>Entries</span></div>
+  <div class="stat-tip" title="All note connections in this scope. The map draws the links between notes on its current page."><strong>{{ stats.edge_count }}</strong><span>Graph links</span></div>
   <div class="stat-tip" title="Explicit typed relationships between two notes: supports, contradicts, causes, leads_to, or references. Created when you (or Suggest Metadata) link one note to another — this is the trail evidence tracing follows."><strong>{{ stats.relationship_edges | default(0) }}</strong><span>Evidence links</span></div>
   <div class="stat-tip" title="Automatic connections between notes that share a theme (e.g. two notes both tagged 'Client Experience'). Nobody links these by hand — shared vocabulary clusters related notes on its own."><strong>{{ stats.theme_edges | default(0) }}</strong><span>Theme links</span></div>
-  <div class="stat-tip" title="Typed moments captured inside notes with #P, #O, #Q, #A, #S, #R, #I markers. Each appears as a small colored satellite around its parent note — this is where most captured knowledge lives."><strong>{{ stats.signal_count | default(0) }}</strong><span>Signals</span></div>
+  <div class="stat-tip" title="All captured signals in this scope. Select a note to browse its signals; the overview keeps them collapsed for a clear, responsive map."><strong>{{ stats.signal_count | default(0) }}</strong><span>Signals available</span></div>
 </section>
 
 <section class="grind-workspace" id="grindWorkspace">
@@ -226,10 +248,17 @@
       <button class="button" type="button" id="zoomInMap" title="Zoom farther in">Zoom +</button>
       <label class="chk"><input type="checkbox" id="toggleRelated" checked> Related rails</label>
       <label class="chk"><input type="checkbox" id="toggleThemeRails" checked> Theme rails</label>
-      <label class="chk"><input type="checkbox" id="toggleSignals" checked> Signals</label>
+      <label class="chk" title="Select a note, then show up to 40 of its signals at a time"><input type="checkbox" id="toggleSignals" disabled> Selected note's signals</label>
       <label class="chk"><input type="checkbox" id="togglePhysics" checked> Physics</label>
       <label class="chk"><input type="checkbox" id="toggleLabels" checked> Labels</label>
       <span class="muted" id="mapStatus">{% if filters.session %}Ready to grind this session.{% else %}Choose a session for focused IDEO synthesis; the map can still be explored now.{% endif %}</span>
+    </div>
+    <div class="graph-detail-status">
+      <span id="graphDetailStatus" role="status">Notes overview. Select a note to explore its signals.</span>
+      <div id="notePages" hidden>
+        <button type="button" class="button" id="previousNotes">Previous notes</button>
+        <button type="button" class="button" id="nextNotes">Next notes</button>
+      </div>
     </div>
     <canvas id="grind3d" class="grind-3d" style="display:block" aria-label="3D SKATE Grind session map"></canvas>
     <canvas id="grindLabels" class="grind-labels"></canvas>
@@ -251,7 +280,7 @@
 
   <aside class="legend-panel">
     <div class="graph-node-search-wrap">
-      <input id="graphNodeSearch" type="search" placeholder="Search nodes..." autocomplete="off" aria-label="Search graph nodes">
+      <input id="graphNodeSearch" type="search" placeholder="Find any note or signal…" autocomplete="off" aria-label="Search graph nodes">
       <div class="graph-search-results" id="graphSearchResults"></div>
     </div>
     <h2>Legend</h2>
@@ -263,6 +292,21 @@
     <button type="button" id="legendReset" class="legend-reset" style="display:none">Show all types</button>
     <h2>Selected</h2>
     <div id="selectedNode" class="selected-node muted">Click a node to inspect it.</div>
+    <section class="signal-browser" id="signalBrowser" hidden aria-label="Selected note signals">
+      <h2>Signals in this note</h2>
+      <p class="signal-count" id="signalCount"></p>
+      <button class="button" type="button" id="browseSignals" aria-expanded="false">Show signals</button>
+      <div class="signal-details" id="signalDetails" hidden>
+        <label for="signalType">Signal type</label>
+        <select id="signalType"></select>
+        <div class="signal-pager">
+          <button class="button" type="button" id="previousSignals" aria-label="Previous signals">←</button>
+          <span id="signalRange" role="status"></span>
+          <button class="button" type="button" id="nextSignals" aria-label="Next signals">→</button>
+        </div>
+        <div id="signalList" class="signal-list"></div>
+      </div>
+    </section>
   </aside>
 </section>
 
@@ -340,8 +384,12 @@
   </section>
 {% endif %}
 
+<script src="/static/graph-detail.js?v=20260913"></script>
 <script>
-const graphData = {{ graph_json | safe }};
+const graphData = JSON.parse({{ graph_json | tojson }});
+const graphTheme = {{ ui_theme | tojson }};
+const graphBackground = graphTheme.colors.bg;
+const graphBackgroundRgb = [1, 3, 5].map(offset => parseInt(graphBackground.slice(offset, offset + 2), 16) / 255);
 const svg = document.getElementById("mindMap");
 const canvas = document.getElementById("grind3d");
 const gl = canvas.getContext("webgl", { antialias: true, alpha: false });
@@ -366,12 +414,10 @@ let paused = false;
 let physics = true;
 let showRelatedRails = true;
 let showThemeRails = true;
-let showSignals = true;
+let showSignals = false;
 let activeTypes = new Set();
 function nodeVisible(node) {
-  if (!node) return false;
-  if (node.is_signal && !showSignals) return false;
-  return activeTypes.size === 0 || activeTypes.has(node.entry_type);
+  return Boolean(node && visibleNodeIds.has(node.id));
 }
 // Obsidian-style sizing: small dots scaled by connectivity; signals smaller.
 function nodeRadius2d(node) {
@@ -395,6 +441,11 @@ let searchQuery = "";
 let grinding = pageGeneratedGrind;
 let grindStartedAt = performance.now();
 let orbitAuto = pageGeneratedGrind;
+let frameDirty = true;
+let layoutUntil = performance.now() + 2200;
+let mapInView = true;
+let lastFrameAt = 0;
+let lastFrameKey = '';
 
 const width = 1000;
 const height = 620;
@@ -441,12 +492,12 @@ const nodeMap = new Map(graphData.nodes.map((node, index) => {
     vz: 0,
   }];
 }));
-const nodes = [...nodeMap.values()];
+const allNodes = [...nodeMap.values()];
 // Signal satellites start beside their parent note instead of on the outer
 // ring. Space siblings deterministically so a session switch cannot place
 // two bubbles on top of one another and inject a large physics impulse.
 const signalsByParent = new Map();
-nodes.filter((node) => node.is_signal).forEach((node) => {
+allNodes.filter((node) => node.is_signal).forEach((node) => {
   if (!signalsByParent.has(node.parent)) signalsByParent.set(node.parent, []);
   signalsByParent.get(node.parent).push(node);
 });
@@ -461,15 +512,72 @@ signalsByParent.forEach((signals, parentId) => {
     node.z = (parent.z || 0) + Math.sin(angle * 1.5) * 24;
   });
 });
-const edges = graphData.edges.filter((edge) => nodeMap.has(edge.from) && nodeMap.has(edge.to));
-const adjacency = new Map(nodes.map((node) => [node.id, new Set()]));
-edges.forEach((edge) => {
+const allEdges = graphData.edges.filter((edge) => nodeMap.has(edge.from) && nodeMap.has(edge.to));
+const adjacency = new Map(allNodes.map((node) => [node.id, new Set()]));
+allEdges.forEach((edge) => {
   adjacency.get(edge.from)?.add(edge.to);
   adjacency.get(edge.to)?.add(edge.from);
 });
-const skatePath = edges.length
-  ? edges.map((edge) => [edge.from, edge.to]).flat()
-  : nodes.map((node) => node.id);
+const graphDetail = new SkateGraphDetail(allNodes, allEdges);
+let detailView = graphDetail.snapshot(activeTypes);
+let nodes = detailView.nodes;
+let edges = detailView.edges;
+let visibleNodeIds = new Set(nodes.map(node => node.id));
+let skatePath = [];
+
+function refreshGraphDetail() {
+  graphDetail.expanded = showSignals;
+  const previous = visibleNodeIds;
+  detailView = graphDetail.snapshot(activeTypes);
+  nodes = detailView.nodes;
+  edges = detailView.edges;
+  visibleNodeIds = new Set(nodes.map(node => node.id));
+  const parent = nodeMap.get(graphDetail.parent);
+  detailView.pageSignals.forEach((node, index, signals) => {
+    if (!parent || previous.has(node.id)) return;
+    const angle = index * Math.PI * 2 / Math.max(1, signals.length);
+    const radius = 70 + (index % 3) * 16;
+    node.x = parent.x + Math.cos(angle) * radius;
+    node.y = parent.y + Math.sin(angle) * radius;
+    node.z = parent.z + Math.sin(angle * 1.5) * 35;
+    node.vx = node.vy = node.vz = 0;
+  });
+  // The animated board visits note connections, never hidden signal objects.
+  const noteEdges = edges.filter(edge => edge.type !== 'contains');
+  skatePath = noteEdges.length ? noteEdges.flatMap(edge => [edge.from, edge.to]) : nodes.filter(node => !node.is_signal).map(node => node.id);
+  const noteRange = detailView.noteTotal > graphDetail.notePageSize
+    ? `Notes ${detailView.noteStart}–${detailView.noteEnd} of ${detailView.noteTotal}`
+    : `${detailView.notes} notes`;
+  document.getElementById('graphDetailStatus').textContent = `${noteRange} · ${detailView.pageSignals.length} of ${graphDetail.total} signals shown. `
+    + (showSignals ? 'Browse the selected note’s signals in the side panel.'
+      : detailView.notePages > 1 ? 'Choose a session, browse pages, or search for any note.' : 'Select a note to explore its signals.');
+  document.getElementById('notePages').hidden = detailView.notePages <= 1;
+  document.getElementById('previousNotes').disabled = detailView.notePage === 0;
+  document.getElementById('nextNotes').disabled = detailView.notePage >= detailView.notePages - 1;
+  const toggle = document.getElementById('toggleSignals');
+  toggle.disabled = !detailView.signals.length;
+  toggle.checked = showSignals;
+  document.getElementById('signalBrowser').hidden = !detailView.signals.length;
+  document.getElementById('signalCount').textContent = `${detailView.signals.length} captured signals. Browse 40 at a time or search for any signal.`;
+  const counts = new Map();
+  detailView.signals.forEach(node => {
+    if (!counts.has(node.entry_type)) counts.set(node.entry_type, {label: node.type_label, count: 0});
+    counts.get(node.entry_type).count++;
+  });
+  const select = document.getElementById('signalType');
+  select.innerHTML = '<option value="">All signal types</option>' + [...counts].map(([type, value]) => `<option value="${esc(type)}">${esc(value.label)} (${value.count})</option>`).join('');
+  select.value = graphDetail.type;
+  document.getElementById('signalDetails').hidden = !showSignals;
+  const browse = document.getElementById('browseSignals');
+  browse.textContent = showSignals ? 'Hide signals' : 'Show signals';
+  browse.setAttribute('aria-expanded', String(showSignals));
+  document.getElementById('signalRange').textContent = detailView.filtered.length ? `${detailView.start}–${detailView.end} of ${detailView.filtered.length}` : 'No signals match this filter';
+  document.getElementById('previousSignals').disabled = detailView.page === 0;
+  document.getElementById('nextSignals').disabled = detailView.page >= detailView.pages - 1;
+  document.getElementById('signalList').innerHTML = detailView.pageSignals.map(node => `<button type="button" class="selected-neighbor" data-node-id="${esc(node.id)}" style="--node-color:${esc(node.color)}"><span>${esc(node.title_full)}</span></button>`).join('');
+  frameDirty = true;
+  layoutUntil = performance.now() + 1800;
+}
 
 function esc(value) {
   return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
@@ -594,10 +702,19 @@ function physicsStep(forceScale = 1) {
 
 // Settle the layout before the first paint so the map appears calm
 // instead of visibly bouncing into place.
-for (let warm = 0; warm < 220; warm++) physicsStep();
+for (let warm = 0; warm < 100; warm++) physicsStep();
 nodes.forEach((node) => { node.vx = 0; node.vy = 0; node.vz = 0; });
 
-function tick() {
+function tick(now = performance.now()) {
+  requestAnimationFrame(tick);
+  if (document.hidden || !mapInView || now - lastFrameAt < 33) return;
+  const settling = !paused && physics && now < layoutUntil;
+  const key = [mode, view.x, view.y, view.scale, orbit.yaw, orbit.pitch, orbit.zoom,
+    hoverNodeId, selectedNodeId, searchQuery, showLabels, showThemes, showRelatedRails, showThemeRails, grinding].join('|');
+  if (!frameDirty && !settling && !dragNode && !grinding && key === lastFrameKey) return;
+  lastFrameAt = now;
+  lastFrameKey = key;
+  frameDirty = false;
   if (!paused && physics) {
     if (grinding && orbitAuto && mode === "3d") {
       orbit.yaw += 0.0024;
@@ -605,12 +722,11 @@ function tick() {
     }
     // Keep the map responsive, but do not restart full-strength settling on
     // every page load or session change.
-    physicsStep(0.12);
+    if (settling || dragNode) physicsStep(0.12);
   }
   updateGrindInfo();
   render2d();
   render3d();
-  requestAnimationFrame(tick);
 }
 
 function nodeMatchesSearch(node) {
@@ -683,7 +799,7 @@ function render2d() {
     ].filter(Boolean).join(" ");
     const curve = curvedRail(edge, a, b);
     let label = "";
-    if (showLabels && focused && edge.label) {
+    if (showLabels && focused && edge.label && edge.type !== 'contains') {
       label = `<text class="edge-label" x="${curve.x}" y="${curve.y - 4}">${esc(shortLabel(edge.label, 22))}</text>`;
     }
     return `<path class="${classes}" d="${curve.path}" stroke="${edgeColor(edge)}"></path>${label}`;
@@ -1267,7 +1383,8 @@ function render3d() {
     return;
   }
   gl.viewport(0, 0, size.w, size.h);
-  gl.clearColor(0.93, 0.96, 0.98, 1);
+  if (graphTheme.id === "default") gl.clearColor(0.93, 0.96, 0.98, 1);
+  else gl.clearColor(...graphBackgroundRgb, 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   const matrix = webglMatrix(size);
@@ -1374,14 +1491,18 @@ function drawLabelsOverlay(size, matrix) {
   labelCtx.textAlign = "center";
   labelCtx.textBaseline = "bottom";
   const items = [];
+  const focusId = hoverNodeId || selectedNodeId;
   for (const node of nodes) {
     if (!nodeVisible(node)) continue;
+    if (node.is_signal && node.id !== focusId) continue;
     const sp = projectGL(node, matrix, size);
     if (sp) items.push({ node, sp });
   }
-  items.sort((a, b) => b.sp.w - a.sp.w);
+  items.sort((a, b) => Number(b.node.id === focusId) - Number(a.node.id === focusId)
+    || Number(b.node.value || 0) - Number(a.node.value || 0) || a.sp.w - b.sp.w);
   const occupied = [];
   for (const { node, sp } of items) {
+    if (occupied.length >= 20) break;
     const text = shortLabel(node.label || node.title_full || "", 24);
     if (!text) continue;
     const y = sp.y - 13 * size.dpr;
@@ -1400,9 +1521,9 @@ function drawLabelsOverlay(size, matrix) {
     if (collides || outside) continue;
     occupied.push(box);
     labelCtx.lineWidth = 3 * size.dpr;
-    labelCtx.strokeStyle = "rgba(255,255,255,.9)";
+    labelCtx.strokeStyle = graphTheme.id === "default" ? "rgba(255,255,255,.9)" : graphBackground;
     labelCtx.strokeText(text, sp.x, y);
-    labelCtx.fillStyle = node.id === hoverNodeId ? "#17324e" : "#405064";
+    labelCtx.fillStyle = graphTheme.id === "default" ? (node.id === hoverNodeId ? "#17324e" : "#405064") : graphTheme.colors.ink;
     labelCtx.fillText(text, sp.x, y);
   }
 }
@@ -1411,18 +1532,21 @@ function selectNode(id) {
   const node = nodeMap.get(id);
   if (!node) return;
   selectedNodeId = id;
+  graphDetail.select(id, activeTypes);
+  showSignals = graphDetail.expanded && Boolean(graphDetail.byParent.get(graphDetail.parent)?.length);
+  refreshGraphDetail();
   const neighbors = [...(adjacency.get(id) || [])]
     .map((neighborId) => nodeMap.get(neighborId))
-    .filter(Boolean)
+    .filter(neighbor => neighbor && !neighbor.is_signal)
     .sort((a, b) => Number(a.is_signal) - Number(b.is_signal) || Number(b.value || 0) - Number(a.value || 0))
     .slice(0, 8);
-  const neighborMarkup = neighbors.length ? `<div class="selected-neighbors"><span>Connected (${adjacency.get(id).size})</span>${neighbors.map((neighbor) =>
+  const neighborMarkup = neighbors.length ? `<div class="selected-neighbors"><span>Connected notes (${neighbors.length})</span>${neighbors.map((neighbor) =>
     `<button type="button" class="selected-neighbor" data-node-id="${esc(neighbor.id)}" style="--node-color:${esc(neighbor.color)}">${esc(neighbor.title_full)}</button>`
   ).join("")}</div>` : "";
   selected.classList.remove("muted");
   selected.innerHTML = `<strong>${esc(node.title_full)}</strong>
     <p>${esc(node.type_label)}${node.session_label ? " / " + esc(node.session_label) : ""}</p>
-    <p>${esc((node.themes || []).join(" / "))}</p>
+    <p>${esc((node.themes || []).slice(0, 6).join(" / "))}</p>
     ${neighborMarkup}
     <a class="button primary" href="${node.url}"><img class="button-icon" src="/static/icons/open.svg" alt="">Open Note</a>`;
 }
@@ -1449,8 +1573,8 @@ function renderGraphSearchResults() {
     graphSearchResults.innerHTML = "";
     return;
   }
-  const matches = nodes
-    .filter((node) => nodeVisible(node) && nodeMatchesSearch(node))
+  const matches = allNodes
+    .filter(nodeMatchesSearch)
     .sort((a, b) => Number(a.is_signal) - Number(b.is_signal) || Number(b.value || 0) - Number(a.value || 0))
     .slice(0, 7);
   graphSearchResults.innerHTML = matches.length
@@ -1467,9 +1591,48 @@ graphSearchResults?.addEventListener("click", (event) => {
   if (!button) return;
   const node = nodeMap.get(button.dataset.nodeId);
   if (!node) return;
+  activeTypes.clear();
+  graphDetail.type = '';
+  refreshLegendUI();
   selectNode(node.id);
   centerNode2d(node);
 });
+
+function toggleSignalDetail(expanded) {
+  showSignals = expanded && Boolean(graphDetail.byParent.get(graphDetail.parent)?.length);
+  graphDetail.expanded = showSignals;
+  if (!showSignals && graphDetail.parent) selectNode(graphDetail.parent);
+  else refreshGraphDetail();
+}
+document.getElementById('browseSignals').addEventListener('click', () => toggleSignalDetail(!showSignals));
+document.getElementById('signalType').addEventListener('change', event => {
+  graphDetail.type = event.target.value;
+  graphDetail.page = 0;
+  selectNode(graphDetail.parent);
+});
+for (const [id, delta] of [['previousSignals', -1], ['nextSignals', 1]]) {
+  document.getElementById(id).addEventListener('click', () => {
+    graphDetail.page += delta;
+    selectNode(graphDetail.parent);
+  });
+}
+document.getElementById('signalList').addEventListener('click', event => {
+  const button = event.target.closest('[data-node-id]');
+  if (button) selectNode(button.dataset.nodeId);
+});
+for (const [id, delta] of [['previousNotes', -1], ['nextNotes', 1]]) {
+  document.getElementById(id).addEventListener('click', () => {
+    graphDetail.notePage += delta;
+    graphDetail.parent = '';
+    selectedNodeId = hoverNodeId = '';
+    selected.textContent = 'Click a note to inspect it.';
+    selected.classList.add('muted');
+    showSignals = false;
+    mapTooltip.classList.add('hidden');
+    refreshGraphDetail();
+    fitVisibleNodes();
+  });
+}
 
 function showGrindCallout(node) {
   if (!grindCallout || !node) return;
@@ -1577,6 +1740,7 @@ function end2dPointer() {
   dragNode = null;
   pan2d.active = false;
   svg.classList.remove("panning");
+  frameDirty = true;
 }
 svg.addEventListener("pointerup", end2dPointer);
 svg.addEventListener("pointercancel", end2dPointer);
@@ -1656,9 +1820,23 @@ function startGrindProgress() {
   grindProgressTimer = setInterval(update, 500);
 }
 
+function fitVisibleNodes() {
+  if (!nodes.length) return;
+  const minX = Math.min(...nodes.map(node => node.x));
+  const maxX = Math.max(...nodes.map(node => node.x));
+  const minY = Math.min(...nodes.map(node => node.y));
+  const maxY = Math.max(...nodes.map(node => node.y));
+  const scale = Math.max(0.25, Math.min(1.4, (width - 120) / Math.max(160, maxX - minX), (height - 100) / Math.max(120, maxY - minY)));
+  view = {x: width / 2 - (minX + maxX) / 2 * scale, y: height / 2 - (minY + maxY) / 2 * scale, scale};
+  const rect = (mode === '3d' ? canvas : svg).getBoundingClientRect();
+  const aspect = rect.width / Math.max(1, rect.height) || 1;
+  const halfFov = Math.atan(Math.tan(Math.PI / 8.8) * Math.min(1, aspect));
+  const radius = Math.max(120, ...nodes.map(node => Math.hypot(node.x - width / 2, node.y - height / 2, node.z || 0) + nodeRadius3d(node)));
+  orbit = {yaw: -0.55, pitch: 0.42, zoom: Math.max(480, Math.min(2400, radius / Math.sin(halfFov) + 80))};
+  frameDirty = true;
+}
 document.getElementById("fitMap").addEventListener("click", () => {
-  view = { x: 0, y: 0, scale: 1 };
-  orbit = { yaw: -0.55, pitch: 0.42, zoom: 760 };
+  fitVisibleNodes();
   statusLine.textContent = "Map fitted.";
 });
 function zoom2dAtCenter(factor) {
@@ -1683,10 +1861,13 @@ document.getElementById("zoomInMap").addEventListener("click", () => {
   orbitAuto = false;
   statusLine.textContent = "Zoomed in.";
 });
-document.getElementById("togglePhysics").addEventListener("change", (event) => { physics = event.target.checked; });
+document.getElementById("togglePhysics").addEventListener("change", (event) => {
+  physics = event.target.checked;
+  layoutUntil = performance.now() + 2200;
+});
 document.getElementById("toggleRelated").addEventListener("change", (event) => { showRelatedRails = event.target.checked; });
 document.getElementById("toggleThemeRails").addEventListener("change", (event) => { showThemeRails = event.target.checked; });
-document.getElementById("toggleSignals").addEventListener("change", (event) => { showSignals = event.target.checked; });
+document.getElementById("toggleSignals").addEventListener("change", (event) => toggleSignalDetail(event.target.checked));
 document.getElementById("startGrind").addEventListener("click", () => {
   const currentSession = new FormData(grindFilters).get("session") || "";
   if (!currentSession) {
@@ -1736,6 +1917,8 @@ function refreshLegendUI() {
   if (reset) reset.style.display = activeTypes.size > 0 ? "block" : "none";
   const shown = activeTypes.size === 0 ? "all types" : Array.from(activeTypes).join(", ");
   statusLine.textContent = `Showing ${shown}.`;
+  graphDetail.locateParent = true;
+  refreshGraphDetail();
 }
 document.querySelectorAll(".legend-item").forEach((el) => {
   el.addEventListener("click", () => {
@@ -1749,10 +1932,25 @@ document.querySelectorAll(".legend-item").forEach((el) => {
 const legendResetBtn = document.getElementById("legendReset");
 if (legendResetBtn) legendResetBtn.addEventListener("click", () => { activeTypes.clear(); refreshLegendUI(); });
 
-if (!nodes.length) {
+window.addEventListener('resize', () => { frameDirty = true; });
+new ResizeObserver(() => {
+  const compact = grindWorkspace.clientWidth < 760;
+  const changed = compact !== grindWorkspace.classList.contains('compact-map');
+  grindWorkspace.classList.toggle('compact-map', compact);
+  frameDirty = true;
+  if (changed) fitVisibleNodes();
+}).observe(grindWorkspace);
+new IntersectionObserver(entries => {
+  mapInView = entries[0].isIntersecting;
+  if (mapInView) frameDirty = true;
+}).observe(grindWorkspace);
+document.addEventListener('visibilitychange', () => { frameDirty = true; });
+refreshGraphDetail();
+if (!allNodes.length) {
   statusLine.textContent = "No memory objects match this scope.";
 } else {
   setMapMode("3d");
+  fitVisibleNodes();
   tick();
 }
 </script>

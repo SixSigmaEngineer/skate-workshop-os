@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} — Session notes</title>
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body { max-width: 820px; margin: 32px auto; padding: 0 24px; font: 15px/1.6 "Segoe UI", Arial, sans-serif; color: #18202a; background: white; }
+    h1 { font-size: 29px; line-height: 1.2; } h2 { font-size: 22px; } h3 { font-size: 17px; }
+    h1, h2, h3 { break-after: avoid; }
+    p, li { orphans: 3; widows: 3; }
+    article { margin: 36px 0; } .source { color: #586778; font-size: 13px; }
+    img { max-width: 100%; height: auto; } pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    table { width: 100%; border-collapse: collapse; } th, td { padding: 8px; border: 1px solid #d9d9d9; overflow-wrap: anywhere; } thead { display: table-header-group; } tr { break-inside: avoid; }
+    a { color: #245b8e; overflow-wrap: anywhere; } button { padding: 10px 16px; cursor: pointer; }
+    @media print { body { margin: 0; padding: 0; max-width: none; font-size: 10.5pt; } .print-tools { display: none; } article + article { break-before: page; } a { color: inherit; text-decoration: none; } }
+  </style>
+</head>
+<body>
+  <div class="print-tools"><button type="button" onclick="window.print()">Print / Save as PDF</button> <a href="/session/{{ session_key }}">Return to session</a><p>Choose Save as PDF in the print dialog. This view uses your saved active notes. For plainer writing, clean and review each note before exporting.</p></div>
+  <h1>{{ title }}</h1>
+  <p class="source">Session notes · {{ notes|length }} active notes · {{ export_date }}</p>
+  {% for note in notes %}
+  <article>
+    <h2>{{ note.entry.title }}</h2>
+    <p class="source">{{ note.entry.date }} · {{ note.entry.type_label }} · <a href="/entry/{{ note.entry.file_id }}">Source note</a></p>
+    {{ note.html | safe }}
+  </article>
+  {% endfor %}
+</body>
+</html>
