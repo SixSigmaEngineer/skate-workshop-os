@@ -3,9 +3,9 @@
 {% block content %}
 <section class="pagehead spotter-head">
   <div>
-    <p class="eyebrow">Always-on room ear</p>
+    <p class="eyebrow">Meetings and workshops</p>
     <h1>{{ spotter_name }} Live</h1>
-    <p class="muted">Listens to the room, writes a running markdown transcript, and answers questions with the transcript as knowledge.</p>
+    <p class="muted">Record system audio for online meetings or a microphone for in-person workshops. Follow the live transcript and ask questions as you go.</p>
   </div>
 </section>
 
@@ -31,20 +31,10 @@
 </style>
 
 <section class="panel" id="meeting-recorder" style="margin-bottom:16px;scroll-margin-top:140px;">
-  <h3 style="margin-top:0;">Record a Meeting</h3>
-  <p><a class="button" href="/about/recording">Recording &amp; transcription guide</a></p>
-  <p class="muted">Captures system audio (Teams, Zoom, Meet, Webex — any app) plus your microphone, transcribed fully locally.
-     You can leave this page or minimize SKATE while it records.
-     <strong>With the desktop tray app, closing the SKATE window hides it in the system tray; recording continues.</strong>
-     The tray shows a skateboard when not recording and a red circle during recording. Hover for status; right-click for Open SKATE or Stop recording &amp; save.
-     When you stop, SKATE saves the WAV audio and a transcript note in the chosen session. The note includes an audio download link.</p>
-  <ol class="muted">
-    <li>Play your meeting through the Windows default speakers or headphones.</li>
-    <li>Choose a session below, or select “Create a new session…” to add one. Keep “include my microphone” checked to record your voice too.</li>
-    <li>Select Start recording. When the meeting ends, select Stop &amp; save note.</li>
-    <li>Open the saved note and use Clean/Compress Notes to review the workshop content.</li>
-  </ol>
-  <p class="field-help">Recording and transcription stay on this PC. AI cleanup uses the provider chosen in Settings. Keep SKATE running until the note is saved. Choosing Exit SKATE from the tray menu shuts down the app and stops any recording. If you launched without a tray icon, keep the SKATE window open.</p>
+  <h3 style="margin-top:0;">Record with {{ spotter_name }} Live</h3>
+  <p class="muted">Choose system audio for Teams, Zoom, or other apps playing through your Windows default speakers or headphones. Choose microphone for a workshop in the room (uses your Windows default microphone).</p>
+  <p class="field-help">Audio is saved on this PC. Live transcription uses the engine shown below; the final transcript is processed locally. Keep this page open for live captions and questions. Recording continues when you navigate away or minimize SKATE.</p>
+  <p><a href="/about/recording">Recording &amp; transcription guide</a></p>
   <div class="toolbar" style="flex-wrap:wrap;gap:12px;align-items:center;">
     <button class="button primary" id="recStartBtn" type="button">
       <img class="button-icon" src="/static/icons/record.svg?v=red1" alt=""><span>Start recording</span>
@@ -57,7 +47,13 @@
         <option value="__new__">+ Create a new session…</option>
       </select>
     </label>
-    <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="recMic" checked> include my microphone</label>
+    <label>Audio source
+      <select id="recSource">
+        <option value="system">System audio — online meeting</option>
+        <option value="microphone">Microphone — in-person workshop</option>
+      </select>
+    </label>
+    <label id="recMicLabel" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="recMic" checked> Include my microphone too</label>
     <span class="muted" id="recStatus"><span class="live-dot" id="recDot"></span><span id="recStatusText">Idle</span></span>
   </div>
   <form id="recNewSessionForm" class="recorder-session-form" hidden>
@@ -76,7 +72,7 @@
 <section class="live-grid">
   <div class="panel">
     <div class="toolbar" style="flex-wrap: wrap; gap: 10px;">
-      <button class="button primary" id="liveToggleBtn" type="button">
+      <button class="button primary" id="liveToggleBtn" type="button" hidden>
         <img class="button-icon" src="/static/icons/record.svg?v=red1" alt=""><span>Start listening</span>
       </button>
       <input type="hidden" id="engineSelect" value="{{ stt_provider }}">
@@ -93,15 +89,18 @@
     {% if stt_provider == 'openai' and not openai_key_present %}
       <p class="notice">OpenAI Realtime is selected, but no OpenAI API key is saved. Add the key in Settings before starting.</p>
     {% endif %}
+    <label>Ask about a previous recording
+      <select id="transcriptHistory"><option value="">Current recording</option></select>
+    </label>
     <p class="muted" style="margin: 8px 0 6px;">Transcript file: <span class="file-pill" id="filePill">created when you start</span></p>
     <div class="live-transcript" id="liveTranscript" aria-live="polite">
-      <p class="muted">The room transcript will appear here.</p>
+      <p class="muted">Your live transcript will appear here.</p>
     </div>
   </div>
 
   <div class="panel">
     <h3 style="margin-top:0;">Ask {{ spotter_name }}</h3>
-    <p class="muted">Room listening pauses while you talk. The agent answers using everything captured so far.</p>
+    <p class="muted">Type questions during the meeting without interrupting transcription, or ask afterward. Spoken questions briefly pause live captions; audio recording continues. The agent answers using everything captured so far.</p>
     <div class="toolbar">
       <button class="button talk-toggle" id="askVoiceBtn" type="button" aria-pressed="false">
         <img class="button-icon" src="/static/icons/start-talking.svg" alt=""><span>Hold a question</span>
@@ -159,14 +158,51 @@ function setStatus(text, live) {
   liveDot.classList.toggle("on", !!live);
 }
 
+let captureSocket = null, captureContext = null;
+function closeNativeCapture() {
+  if (captureSocket) { captureSocket.onclose = null; captureSocket.close(); captureSocket = null; }
+  if (captureContext) { captureContext.close(); captureContext = null; }
+}
 async function openConfiguredMicrophone() {
-  const selected = CONFIGURED_MICROPHONE && CONFIGURED_MICROPHONE !== "system-default";
-  if (!selected) return navigator.mediaDevices.getUserMedia({audio: true});
-  try {
-    return await navigator.mediaDevices.getUserMedia({audio: {deviceId: {exact: CONFIGURED_MICROPHONE}}});
-  } catch (error) {
-    return navigator.mediaDevices.getUserMedia({audio: true});
-  }
+  closeNativeCapture();
+  const context = captureContext = new (window.AudioContext || window.webkitAudioContext)();
+  await context.resume();
+  const destination = context.createMediaStreamDestination();
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const socket = captureSocket = new WebSocket(`${proto}://${location.host}/ws/recorder-audio`);
+  socket.binaryType = "arraybuffer";
+  let nextTime = 0;
+  return await new Promise((resolve, reject) => {
+    let ready = false;
+    const timeout = setTimeout(() => { closeNativeCapture(); reject(new Error("No audio arrived. Check your Windows audio device and try again.")); }, 10000);
+    socket.onmessage = event => {
+      if (typeof event.data === "string") {
+        const error = new Error(JSON.parse(event.data).error || "Audio capture failed.");
+        clearTimeout(timeout);
+        if (!ready) reject(error);
+        else { stopRoom(); setStatus(error.message, false); }
+        closeNativeCapture();
+        return;
+      }
+      const pcm = new Int16Array(event.data);
+      const buffer = context.createBuffer(1, pcm.length, 16000);
+      const samples = buffer.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) samples[i] = pcm[i] / 32768;
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(destination);
+      nextTime = Math.max(nextTime, context.currentTime + 0.05);
+      source.start(nextTime);
+      nextTime += buffer.duration;
+      if (!ready) { ready = true; clearTimeout(timeout); resolve(destination.stream); }
+    };
+    socket.onerror = () => { clearTimeout(timeout); reject(new Error("Could not connect to the audio recorder.")); };
+    socket.onclose = () => {
+      clearTimeout(timeout);
+      if (!ready) reject(new Error("Audio recording is not running."));
+      else if (roomActive && !paused) { stopRoom(); setStatus("Audio stream ended. Check recording status above.", false); }
+    };
+  });
 }
 
 function updateEngineCapability() {
@@ -398,7 +434,7 @@ async function startLocalEngine() {
   try {
     localStream = await openConfiguredMicrophone();
   } catch (error) {
-    setStatus("Microphone permission was blocked. Allow microphone access for SKATE in Windows Settings.", false);
+    setStatus(error.message || "Audio capture failed.", false);
     return false;
   }
   startLocalRecorderChunk();
@@ -426,7 +462,7 @@ async function startOpenAIEngine() {
   try {
     micStream = await openConfiguredMicrophone();
   } catch (e) {
-    setStatus("Microphone permission was blocked.", false);
+    setStatus(e.message || "Audio capture failed.", false);
     return false;
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -506,7 +542,7 @@ async function startElevenEngine() {
   try {
     micStream = await openConfiguredMicrophone();
   } catch (e) {
-    setStatus("Microphone permission was blocked.", false);
+    setStatus(e.message || "Audio capture failed.", false);
     return false;
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -573,7 +609,7 @@ function updateToggleUI() {
   const span = toggleBtn.querySelector("span");
   const img = toggleBtn.querySelector("img");
   if (!roomActive) {
-    span.textContent = "Start listening";
+    span.textContent = "Resume live transcript";
     img.src = "/static/icons/record.svg?v=red1";
     toggleBtn.disabled = false;
   } else if (paused) {
@@ -599,12 +635,14 @@ async function startRoom() {
     : engine === "local"
       ? await startLocalEngine()
       : startBrowserEngine();
-  if (!ok) { roomActive = false; updateToggleUI(); return; }
+  if (!ok) { roomActive = false; closeNativeCapture(); updateToggleUI(); return false; }
   updateToggleUI();
-  setStatus(engine === "local" ? "Listening locally · transcript appears in short segments…" : "Listening to the room…", true);
+  toggleBtn.hidden = true;
+  setStatus(engine === "local" ? "Listening locally · transcript appears in short segments…" : "Transcribing recorded audio…", true);
 }
 
 function stopRoom() {
+  closeNativeCapture();
   const engine = engineSelect.value;
   roomActive = false;
   stopBrowserEngine();
@@ -618,6 +656,7 @@ function stopRoom() {
 toggleBtn.addEventListener("click", () => { if (roomActive) stopRoom(); else startRoom(); });
 
 function pauseRoom() {
+  closeNativeCapture();
   paused = true;
   if (engineSelect.value === "browser") stopBrowserEngine();
   if (engineSelect.value === "local") stopLocalEngine();
@@ -628,6 +667,7 @@ function pauseRoom() {
 }
 
 function resumeRoom() {
+  if (!paused) return;
   paused = false;
   updateToggleUI();
   if (!roomActive) { setStatus("Idle", false); return; }
@@ -635,7 +675,7 @@ function resumeRoom() {
   if (engineSelect.value === "local") startLocalEngine();
   if (engineSelect.value === "openai") startOpenAIEngine();
   if (engineSelect.value === "elevenlabs") startElevenEngine();
-  setStatus(engineSelect.value === "local" ? "Listening locally · transcript appears in short segments…" : "Listening to the room…", true);
+  setStatus(engineSelect.value === "local" ? "Listening locally · transcript appears in short segments…" : "Transcribing recorded audio…", true);
 }
 
 // ---------- Speak replies (same behavior as Spotter) ----------
@@ -648,7 +688,7 @@ function speakBrowser(text) {
 }
 
 async function speak(text) {
-  if (!text) return;
+  if (!text || roomActive) return;
   let speakAloud = SPEAK_ALOUD_FALLBACK;
   let ttsProvider = TTS_PROVIDER_FALLBACK;
   try {
@@ -718,14 +758,12 @@ async function askAgent(question, label) {
 function runStance(modeId) {
   const mode = MODE_BY_ID[modeId];
   if (!mode || asking || capturing) return;
-  pauseRoom();
   const question = (mode.prompt || mode.label) +
     "\n\nApply this stance to the room transcript captured so far and report what you find.";
   askAgent(question, mode.label + " (stance)");
 }
 
 askSendBtn.addEventListener("click", () => {
-  pauseRoom();
   const q = askInput.value;
   askInput.value = "";
   askAgent(q);
@@ -857,6 +895,10 @@ const recStartBtn = document.getElementById("recStartBtn");
 const recStopBtn = document.getElementById("recStopBtn");
 const recSession = document.getElementById("recSession");
 const recMic = document.getElementById("recMic");
+const recSource = document.getElementById("recSource");
+recSource.addEventListener("change", () => {
+  document.getElementById("recMicLabel").style.display = recSource.value === "microphone" ? "none" : "flex";
+});
 const requestedRecSession = new URLSearchParams(location.search).get("session");
 if (requestedRecSession && requestedRecSession !== "__new__" && [...recSession.options].some(option => option.value === requestedRecSession)) recSession.value = requestedRecSession;
 const recDot = document.getElementById("recDot");
@@ -875,7 +917,8 @@ function recUpdateControls() {
   const busy = recCommandPending || ["recording", "stopping", "transcribing"].includes(recState);
   recStartBtn.disabled = busy || recSessionSaving || recSession.value === "__new__";
   recStopBtn.disabled = recCommandPending || recState !== "recording";
-  recSession.disabled = recMic.disabled = busy || recSessionSaving;
+  recSession.disabled = recMic.disabled = recSource.disabled = busy || recSessionSaving;
+  document.getElementById("transcriptHistory").disabled = busy;
   recNewSessionForm.querySelectorAll("input, button").forEach(control => { control.disabled = busy || recSessionSaving; });
 }
 
@@ -941,7 +984,7 @@ function recRender(status) {
     const mm = String(Math.floor(s / 60)).padStart(2, "0");
     const ss = String(s % 60).padStart(2, "0");
     recStatusText.textContent = "Recording " + mm + ":" + ss;
-    if ((status.warnings || []).length) recResult.textContent = "Warning: " + status.warnings.join("; ");
+    recResult.textContent = (status.warnings || []).length ? "Audio capture problem: " + status.warnings.join("; ") : "";
   } else if (state === "stopping") {
     recResult.textContent = "Saving the recording…";
     recStatusText.textContent = "Finishing up\u2026";
@@ -956,6 +999,7 @@ function recRender(status) {
     noteLink.href = status.url;
     noteLink.textContent = "Open transcript note";
     recResult.append(noteLink);
+    if ((status.warnings || []).length) recResult.append(" — Capture warning: " + status.warnings.join("; "));
   } else if (state === "error") {
     recStatusText.textContent = "Error";
     recResult.textContent = status.error || "Recording failed.";
@@ -974,7 +1018,17 @@ async function recPoll() {
   try {
     const res = await fetch("/api/recorder/status", {cache: "no-store"});
     const status = await res.json();
+    const previousState = recState;
     recRender(status);
+    toggleBtn.hidden = status.state !== "recording" || roomActive;
+    if (!toggleBtn.hidden) updateToggleUI();
+    if (status.state === "saved" && previousState !== "saved" && status.live_file) loadTranscript(status.live_file);
+    if (status.live_file && !fileName) {
+      fileName = status.live_file;
+      filePill.textContent = "transcripts/" + fileName;
+      if (status.state !== "recording") loadTranscript(fileName);
+    }
+    if (status.state === "saved") refreshTranscriptHistory();
     const active = ["recording", "stopping", "transcribing"].includes(status.state);
     if (active && !recTimer) recTimer = setInterval(recPoll, 2000);
     if (!active && recTimer) { clearInterval(recTimer); recTimer = null; }
@@ -991,6 +1045,7 @@ async function recorderCommand(endpoint, payload) {
     recResult.textContent = "";
     await recPoll();
     if (!recTimer) recTimer = setInterval(recPoll, 2000);
+    return true;
   } catch (error) {
     recResult.textContent = error.message || "Could not reach the recorder.";
     await recPoll();
@@ -999,14 +1054,46 @@ async function recorderCommand(endpoint, payload) {
     recUpdateControls();
   }
 }
-recStartBtn.addEventListener("click", () => {
+recStartBtn.addEventListener("click", async () => {
   if (recSession.value === "__new__" || recSessionSaving || recCommandPending) return;
-  recorderCommand("/api/recorder/start", {
-    session: recSession.value, session_label: recSession.selectedOptions[0]?.dataset.label || "", include_mic: recMic.checked,
+  const started = await recorderCommand("/api/recorder/start", {
+    source: recSource.value, session: recSession.value, session_label: recSession.selectedOptions[0]?.dataset.label || "", include_mic: recMic.checked,
   });
+  if (started) {
+    const status = await (await fetch("/api/recorder/status", {cache: "no-store"})).json();
+    fileName = status.live_file;
+    filePill.textContent = "transcripts/" + fileName;
+    transcriptPane.textContent = "";
+    await startRoom();
+  }
 });
-recStopBtn.addEventListener("click", () => recorderCommand("/api/recorder/stop"));
+recStopBtn.addEventListener("click", () => { stopRoom(); recorderCommand("/api/recorder/stop"); });
 
+async function loadTranscript(file) {
+  try {
+    const response = await fetch("/api/spotter-live/transcripts?file=" + encodeURIComponent(file));
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not load transcript.");
+    fileName = data.file;
+    filePill.textContent = "transcripts/" + fileName;
+    transcriptPane.textContent = data.text;
+    transcriptPane.style.whiteSpace = "pre-wrap";
+  } catch (error) { setStatus(error.message, false); }
+}
+async function refreshTranscriptHistory() {
+  try {
+    const data = await (await fetch("/api/spotter-live/transcripts")).json();
+    const select = document.getElementById("transcriptHistory");
+    const selected = select.value;
+    select.replaceChildren(new Option("Current recording", ""));
+    (data.files || []).forEach(file => select.add(new Option(file.replace("spotter-live-", "").replace(".md", ""), file)));
+    select.value = selected;
+  } catch (error) { /* The current recording remains available. */ }
+}
+document.getElementById("transcriptHistory").addEventListener("change", event => {
+  if (event.target.value) loadTranscript(event.target.value);
+});
+refreshTranscriptHistory();
 recPoll();
 </script>
 {% endblock %}

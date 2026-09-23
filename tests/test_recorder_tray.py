@@ -49,6 +49,81 @@ class RecorderTrayTests(unittest.TestCase):
             session="planning", session_label="Planning", include_mic=True,
         )
 
+    def test_native_capture_uses_output_id_and_downmixes_all_channels(self):
+        stop = threading.Event()
+        reader = Mock()
+        def record(**kwargs):
+            stop.set()
+            return np.array([[0.0, 0.8], [0.2, 0.6]], dtype=np.float32)
+        reader.record.side_effect = record
+        source = Mock(isloopback=True)
+        source.recorder.return_value.__enter__ = Mock(return_value=reader)
+        source.recorder.return_value.__exit__ = Mock(return_value=False)
+        sc = SimpleNamespace(default_speaker=lambda: SimpleNamespace(id="output-id", name="Duplicate name"), get_microphone=Mock(return_value=source))
+        chunks, errors = [], []
+        with patch.dict(sys.modules, {"soundcard": sc}):
+            app._recorder_capture("loopback", stop, chunks, errors)
+        self.assertEqual(errors, [])
+        sc.get_microphone.assert_called_once_with(id="output-id", include_loopback=True)
+        source.recorder.assert_called_once_with(samplerate=16000)
+        np.testing.assert_allclose(chunks[0], [13106, 13106], atol=1)
+
+    def test_microphone_mode_does_not_start_system_capture(self):
+        with patch.object(app, "_recorder_available", return_value=(True, "")), patch.object(app.threading, "Thread") as thread:
+            response = self.client.post("/api/recorder/start", json={"source": "microphone", "include_mic": False})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(thread.call_count, 1)
+        self.assertEqual(thread.call_args.kwargs["args"][0], "mic")
+        self.assertEqual(self.state["source"], "microphone")
+        self.assertTrue(self.state["include_mic"])
+
+    def test_invalid_audio_source_is_rejected(self):
+        with patch.object(app, "_recorder_available", return_value=(True, "")):
+            response = self.client.post("/api/recorder/start", json={"source": "unknown"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.state["state"], "idle")
+
+    def test_microphone_note_has_accurate_source(self):
+        body = app._recorder_note_body("Workshop", "hello", True, "base", source="microphone")
+        self.assertIn("Recorded from microphone", body)
+        self.assertNotIn("system audio", body)
+
+    def test_live_relay_streams_the_same_mixed_pcm_and_disconnects(self):
+        self.captured_audio()
+        self.state["loopback"].clear()
+        self.state["mic"].clear()
+        class Socket:
+            def __init__(inner):
+                inner.packets = []
+            async def accept(inner):
+                pass
+            async def receive(inner):
+                if inner.packets:
+                    return {"type": "websocket.disconnect"}
+                self.state["loopback"].append(np.array([1000, 32000], dtype=np.int16))
+                self.state["mic"].append(np.array([500, 32000], dtype=np.int16))
+                return {"type": "websocket.receive"}
+            async def send_bytes(inner, data):
+                inner.packets.append(data)
+            async def close(inner):
+                pass
+        socket = Socket()
+        asyncio.run(app.recorder_audio(socket))
+        np.testing.assert_array_equal(np.frombuffer(socket.packets[0], dtype="<i2"), [1500, 32767])
+        self.assertEqual(self.state["state"], "recording")
+
+    def test_recording_history_can_be_reopened_without_recorder_state(self):
+        transcripts = self.root / "transcripts"
+        transcripts.mkdir()
+        self.patch(app, "TRANSCRIPTS_DIR", transcripts)
+        (transcripts / "spotter-live-example.md").write_text("We agreed to test on Friday.", encoding="utf-8")
+        history = self.client.get("/api/spotter-live/transcripts").json()
+        self.assertEqual(history["files"], ["spotter-live-example.md"])
+        saved = self.client.get("/api/spotter-live/transcripts", params={"file": history["files"][0]}).json()
+        self.assertIn("Friday", saved["text"])
+        response = self.client.get("/api/spotter-live/transcripts", params={"file": "../../settings.json"})
+        self.assertEqual(response.status_code, 404)
+
     def test_tooltip_covers_recording_and_non_recording_states(self):
         self.assertEqual(app._tray_recorder_tooltip(), "SKATE — Not recording")
         self.state.update(state="recording", started_at=100)

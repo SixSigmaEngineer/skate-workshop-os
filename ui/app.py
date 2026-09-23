@@ -4012,14 +4012,18 @@ def _recorder_capture(kind: str, stop_event, chunks: list, errors: list) -> None
 
         if kind == "loopback":
             speaker = sc.default_speaker()
-            source = sc.get_microphone(str(speaker.name), include_loopback=True)
+            source = sc.get_microphone(id=speaker.id, include_loopback=True)
+            if not source.isloopback:
+                raise RuntimeError("The selected output device has no system-audio loopback.")
         else:
             source = sc.default_microphone()
         frames = int(RECORDER_SAMPLERATE * RECORDER_CHUNK_SECONDS)
-        with source.recorder(samplerate=RECORDER_SAMPLERATE, channels=1) as recorder:
+        # Capture the native channel layout: WASAPI single-channel capture can
+        # return corrupt audio. Downmix only after receiving the full frame.
+        with source.recorder(samplerate=RECORDER_SAMPLERATE) as recorder:
             while not stop_event.is_set():
                 data = recorder.record(numframes=frames)
-                mono = data[:, 0] if getattr(data, "ndim", 1) > 1 else data
+                mono = data.mean(axis=1) if getattr(data, "ndim", 1) > 1 else data
                 chunks.append(
                     (mono * 32767.0).clip(-32768, 32767).astype(np.int16)
                 )
@@ -4052,8 +4056,8 @@ def _recorder_wav_bytes(loopback_chunks: list, mic_chunks: list) -> bytes:
     return buffer.getvalue()
 
 
-def _recorder_note_body(title: str, transcript: str, include_mic: bool, model_name: str, audio_filename: str = "") -> str:
-    sources = "system audio + microphone" if include_mic else "system audio"
+def _recorder_note_body(title: str, transcript: str, include_mic: bool, model_name: str, audio_filename: str = "", source: str = "system") -> str:
+    sources = "microphone" if source == "microphone" else ("system audio + microphone" if include_mic else "system audio")
     stamp = time.strftime("%Y-%m-%d %H:%M")
     audio_link = (
         f"[Download recording (WAV)]({ATTACHMENTS_DIR_NAME}/{quote(audio_filename)})\n\n"
@@ -4122,8 +4126,13 @@ def _recorder_finalize(include_mic: bool, session: str, session_label: str, mode
             audio_path, audio_path.name, "audio/wav", model_name, on_progress
         )
         title = f"Meeting recording {time.strftime('%Y-%m-%d %H:%M')}"
-        body = _recorder_note_body(title, transcript or "(no speech detected)", include_mic, model_name, audio_path.name)
+        body = _recorder_note_body(title, transcript or "(no speech detected)", include_mic, model_name, audio_path.name, state.get("source", "system"))
+        if state.get("errors"):
+            body += "\n## Capture warnings\n\n" + "\n".join(state["errors"]) + "\n"
         file_id = _recorder_save_note(session, session_label, body, title)
+        if state.get("live_file"):
+            TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+            (TRANSCRIPTS_DIR / state["live_file"]).write_text(body, encoding="utf-8")
         state.update({"state": "saved", "note": file_id, "url": f"/entry/{file_id}"})
     except Exception as exc:
         rescue = ""
@@ -4149,7 +4158,10 @@ async def recorder_start(request: Request):
     with RECORDER_LOCK:
         if RECORDER.get("state") in {"recording", "stopping", "transcribing"}:
             return JSONResponse({"ok": False, "error": "A recording is already running."}, status_code=409)
-        include_mic = bool(payload.get("include_mic", True))
+        source = payload.get("source", "system")
+        if source not in {"system", "microphone"}:
+            return JSONResponse({"ok": False, "error": "Choose system audio or microphone."}, status_code=400)
+        include_mic = source == "microphone" or bool(payload.get("include_mic", True))
         stop_event = threading.Event()
         loopback_chunks: list = []
         mic_chunks: list = []
@@ -4160,7 +4172,7 @@ async def recorder_start(request: Request):
                 args=("loopback", stop_event, loopback_chunks, errors),
                 daemon=True,
             )
-        ]
+        ] if source == "system" else []
         if include_mic:
             threads.append(
                 threading.Thread(
@@ -4179,6 +4191,8 @@ async def recorder_start(request: Request):
             "mic": mic_chunks,
             "errors": errors,
             "include_mic": include_mic,
+            "source": source,
+            "live_file": f"spotter-live-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}.md",
             "session": str(payload.get("session", "")),
             "session_label": str(payload.get("session_label", "")),
         })
@@ -4221,7 +4235,8 @@ def _recorder_status_payload() -> dict:
     with RECORDER_LOCK:
         recorder = dict(RECORDER)
     state = recorder.get("state", "idle")
-    payload = {"state": state}
+    payload = {"state": state, "source": recorder.get("source", "system"), "include_mic": recorder.get("include_mic", True), "warnings": list(recorder.get("errors", []))}
+    payload["live_file"] = recorder.get("live_file", "")
     if recorder.get("audio"):
         payload.update(audio=recorder["audio"], audio_url=recorder["audio_url"])
     if state == "recording":
@@ -4241,6 +4256,53 @@ def _recorder_status_payload() -> dict:
 @app.get("/api/recorder/status")
 def recorder_status():
     return JSONResponse(_recorder_status_payload())
+
+
+@app.websocket("/ws/recorder-audio")
+async def recorder_audio(ws: WebSocket):
+    """Relay the same native PCM saved to WAV to Spotter's live engines."""
+    await ws.accept()
+    import numpy as np
+    state = RECORDER.copy()
+    streams = ([state.get("loopback", [])] if state.get("source", "system") == "system" else [])
+    if state.get("include_mic", True):
+        streams.append(state.get("mic", []))
+    index = min((len(chunks) for chunks in streams), default=0)
+    try:
+        while RECORDER.get("stop_event") is state.get("stop_event") and RECORDER.get("state") == "recording":
+            if state.get("errors"):
+                await ws.send_json({"error": "; ".join(state["errors"])})
+                return
+            if streams and all(len(chunks) > index for chunks in streams):
+                mixed = sum(chunks[index].astype(np.int32) for chunks in streams)
+                await ws.send_bytes(np.clip(mixed, -32768, 32767).astype("<i2").tobytes())
+                index += 1
+            else:
+                # Receive with a timeout so a disconnected page releases the relay.
+                try:
+                    message = await asyncio.wait_for(ws.receive(), timeout=0.05)
+                    if message["type"] == "websocket.disconnect":
+                        return
+                except asyncio.TimeoutError:
+                    pass
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        try:
+            await ws.close()
+        except RuntimeError:
+            pass
+
+
+@app.get("/api/spotter-live/transcripts")
+def spotter_live_transcripts(file: str = ""):
+    if file:
+        path = _safe_transcript_path(file)
+        if path is None or not path.is_file():
+            return JSONResponse({"ok": False, "error": "Transcript not found."}, status_code=404)
+        return {"ok": True, "file": path.name, "text": path.read_text(encoding="utf-8")}
+    paths = sorted(TRANSCRIPTS_DIR.glob("spotter-live-*.md"), key=lambda p: p.stat().st_mtime, reverse=True) if TRANSCRIPTS_DIR.exists() else []
+    return {"ok": True, "files": [p.name for p in paths[:100]]}
 
 
 @app.post("/api/spotter-live/append")
