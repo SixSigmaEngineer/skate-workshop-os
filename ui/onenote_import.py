@@ -32,7 +32,7 @@ PDF_EXT = {".pdf"}
 SUPPORTED_EXT = TEXT_EXT | HTML_EXT | DOCX_EXT | PDF_EXT
 
 # OneNote's own binary export. We cannot parse it without OneNote itself.
-UNSUPPORTED_EXT = {".one", ".onepkg", ".onetoc2"}
+UNSUPPORTED_EXT = {".one", ".onepkg", ".onetoc2", ".mht", ".mhtml", ".xps", ".zip"}
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -393,7 +393,7 @@ def build_plan(
         "total_files": 0,
         "total_notes": 0,
         "skipped": [],
-        "warnings": [],
+        "warnings": ["Text-only import: photos, drawings, audio, and embedded attachments are not copied. Keep the original exports. Heading splits may not match OneNote pages."],
     }
     if not source.exists():
         result["error"] = f"Path not found: {source}"
@@ -415,8 +415,7 @@ def build_plan(
         if ext in UNSUPPORTED_EXT:
             result["skipped"].append({
                 "file": fp.name,
-                "reason": "OneNote's own .one format can't be read directly. "
-                          "Open it in OneNote and Export to Word or Markdown.",
+                "reason": f"{ext} is not supported. Export pages or sections from OneNote as Word (.docx) instead.",
             })
             continue
         result["total_files"] += 1

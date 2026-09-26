@@ -19,6 +19,8 @@ settings.json
 /.trash/
 # Recorded audio stays private, including recordings made in a demo session.
 /conversations/**/attachments/recording-*.wav
+/conversations/**/attachments/original-note-*.txt
+/demo-vault/conversations/**/attachments/original-note-*.txt
 /conversations/**/*-meeting-recording-*.md
 /INDEX.md
 

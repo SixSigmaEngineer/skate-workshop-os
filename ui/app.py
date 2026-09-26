@@ -38,6 +38,7 @@ import markdown
 
 import embeddings
 import note_quality
+import note_sources
 import ui_themes
 import vault_trash
 from audio_uploads import receive_recording, UploadProblem, audio_sections
@@ -998,14 +999,15 @@ def _active_model(settings: dict) -> str:
     return str(settings.get("model") or "gpt-5.6")
 
 
-def _chat_completions(base_url: str, headers: dict, model: str, prompt: str, max_out: int, reasoning_effort: str = "") -> str:
+def _chat_completions(base_url: str, headers: dict, model: str, prompt: str, max_out: int, reasoning_effort: str = "", *, json_output: bool = True) -> str:
     """Call an OpenAI-compatible chat completions endpoint (OpenRouter, LM Studio)."""
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_out,
-        "response_format": {"type": "json_object"},
     }
+    if json_output:
+        payload["response_format"] = {"type": "json_object"}
     if reasoning_effort:
         payload["reasoning"] = {"effort": reasoning_effort}
     try:
@@ -1034,7 +1036,7 @@ def _lmstudio_default_model(base_url: str) -> str:
     return str(models[0].get("id") or "")
 
 
-def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
+def _call_llm(settings: dict, prompt: str, model: str | None = None, *, json_output: bool = True) -> str:
     if note_quality.WRITING_RULES not in prompt:
         prompt = note_quality.WRITING_RULES + "\n" + prompt
     provider = settings.get("provider", "openai")
@@ -1093,14 +1095,14 @@ def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
         }
         # OpenRouter accepts low/medium/high reasoning effort for capable models.
         or_effort = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high", "max": "high"}.get(effort, "")
-        return _chat_completions("https://openrouter.ai/api/v1", headers, model, prompt, out_tokens, or_effort)
+        return _chat_completions("https://openrouter.ai/api/v1", headers, model, prompt, out_tokens, or_effort, json_output=json_output)
 
     if provider == "lmstudio":
         base_url = str(settings.get("lmstudio_base_url") or "http://127.0.0.1:1234/v1").rstrip("/")
         try:
             if not model:
                 model = _lmstudio_default_model(base_url)
-            return _chat_completions(base_url, {"Content-Type": "application/json"}, model, prompt, out_tokens)
+            return _chat_completions(base_url, {"Content-Type": "application/json"}, model, prompt, out_tokens, json_output=json_output)
         except (URLError, TimeoutError, ConnectionError, OSError) as e:
             raise ValueError(
                 f"Could not reach LM Studio at {base_url}. Start LM Studio, load a model, "
@@ -1122,8 +1124,9 @@ def _call_llm(settings: dict, prompt: str, model: str | None = None) -> str:
             "model": model,
             "input": prompt,
             "max_output_tokens": out_tokens,
-            "text": {"format": {"type": "json_object"}},
         }
+        if json_output:
+            payload["text"] = {"format": {"type": "json_object"}}
         # GPT-5.6 supports none/low/medium/high/xhigh/max. Keep the effort
         # explicit so interactive Spotter calls and quality-first GRIND calls
         # have intentional latency/quality tradeoffs.
@@ -1377,6 +1380,7 @@ def _compression_prompt(title: str, tags: str, body: str) -> str:
 
 {note_quality.WRITING_RULES}
 {note_quality.RELEVANCE_RULES}
+{note_quality.SUMMARY_PROSE_RULES}
 
 The note may be dirty: shorthand, fragments, typos, half-finished bullets, and stream-of-consciousness capture. Rewrite it clean and concise while preserving meaning, names, commitments, and uncertainty. Do not invent anything that is not in the note.
 
@@ -1385,6 +1389,7 @@ Then organize the substance into SKATE's typed signals so each one appears in th
 Return only JSON with:
 {{
   "gist": "one sentence",
+  "meeting_summary": "a readable account in 1-3 short paragraphs, up to 200 words, proportional to the source",
   "consulting_context": "the main consulting context for this note",
   "key_points": ["distinct context worth keeping as prose, without repeating signals"],
   "observations": ["distinct direct evidence or notable statements"],
@@ -1456,6 +1461,7 @@ def _normalize_compression(raw: dict, fallback: dict) -> dict:
 
     return {
         "gist": str(raw.get("gist", "")).strip() or fallback["gist"],
+        "meeting_summary": str(raw.get("meeting_summary", "")).strip(),
         "consulting_context": str(raw.get("consulting_context", "")).strip() or fallback["consulting_context"],
         "key_points": list_of_strings("key_points"),
         **{key: list_of_strings(key) for key in note_quality.SIGNAL_KEYS.values()},
@@ -1473,8 +1479,7 @@ def _compression_markdown(compression: dict) -> str:
 
     sections = [
         "## Cleaned Notes",
-        f"**Gist:** {compression['gist']}",
-        f"**Context:** {compression['consulting_context']}",
+        "**Meeting summary**\n\n" + (compression.get("meeting_summary") or compression['gist']),
     ]
     if compression.get("key_points") and compression.get("mode") != "local":
         sections.append("**Key points**\n\n" + bullets(compression["key_points"]))
@@ -1497,8 +1502,8 @@ def _compression_markdown(compression: dict) -> str:
         sections.append("**Decisions**\n\n" + bullets(compression["decisions"]))
     if compression.get("key_points") and compression.get("mode") == "local":
         sections.append("**Additional context to review (not classified)**\n\n" + bullets(compression["key_points"]))
-    if compression.get("agent_memory"):
-        sections.append("**Agent memory**\n" + compression["agent_memory"])
+    if compression.get("agent_memory") and not compression.get("meeting_summary"):
+        sections.append("**Key takeaways**\n" + compression["agent_memory"])
     return "\n\n".join(sections) + "\n"
 
 
@@ -1507,12 +1512,13 @@ def _transcript_summary_prompt(title: str, transcript: str) -> str:
 
 {note_quality.WRITING_RULES}
 {note_quality.RELEVANCE_RULES}
+{note_quality.SUMMARY_PROSE_RULES}
 
 Use only evidence present in the transcript. Remove filler, repetition, false starts, and transcription noise. Keep names, commitments, uncertainty, and important context accurate. Distinguish observed evidence from interpretation.
 
 Return only JSON with:
 {{
-  "summary": "short paragraph",
+  "summary": "a readable account in 1-3 short paragraphs, up to 200 words, proportional to the source",
   "observations": ["direct evidence, facts, or notable statements"],
   "pain_points": ["pain points or friction"],
   "actions": ["action items"],
@@ -2338,6 +2344,18 @@ def _notes_folder() -> Path:
     return folder
 
 
+def _new_note_path(title: str, entry_date: str) -> Path:
+    """Keep filenames short while retaining the full title in note metadata."""
+    folder = _notes_folder()
+    stem = f"{_slugify(entry_date)[:10]}-{_slugify(title)[:80].rstrip('-')}"
+    path = folder / f"{stem}.md"
+    counter = 2
+    while path.exists():
+        path = folder / f"{stem}-{counter}.md"
+        counter += 1
+    return path
+
+
 def _normalize_newlines(text: str) -> str:
     """Collapse CRLF/CR to LF.
 
@@ -2528,6 +2546,10 @@ def home(request: Request):
 
 @app.get("/lineup", response_class=HTMLResponse)
 def lineup_page(request: Request, session: str | None = Query(default=None)):
+    return _render_lineup(request, session or "")
+
+
+def _render_lineup(request: Request, session: str = "", *, form: dict | None = None, error: str = "", status_code: int = 200):
     entries = load_all_entries()
     selected_session = _slugify(session or "") if session else ""
     sidebar = _sidebar_context()
@@ -2537,9 +2559,12 @@ def lineup_page(request: Request, session: str | None = Query(default=None)):
         {
             "selected_session": selected_session,
             "lineup_cadences": LINEUP_CADENCES,
+            "lineup_form": form or {},
+            "lineup_error": error,
             **_lineup_context(entries, selected_session),
             **sidebar,
         },
+        status_code=status_code,
     )
 
 
@@ -2548,7 +2573,7 @@ async def create_lineup_item(request: Request):
     form = await _read_form(request)
     title = str(form.get("title", "")).strip()
     if not title:
-        return HTMLResponse("An action needs a title", status_code=400)
+        return _render_lineup(request, form=form, error="Enter what needs to happen before adding an action.", status_code=400)
     session_raw = str(form.get("session", "")).strip()
     session = _slugify(session_raw) if session_raw else ""
     session_rows = session_stats(load_all_entries())
@@ -2562,20 +2587,19 @@ async def create_lineup_item(request: Request):
         cadence = "weekly"
     due_date = str(form.get("due_date", "")).strip()
     body = f"# {title}\n\n## Summary\n\n{str(form.get('details', '')).strip() or title}\n"
-    folder = _notes_folder()
     entry_date = date.today().isoformat()
-    path = folder / f"{entry_date}-{_slugify(title)}.md"
-    counter = 2
-    while path.exists():
-        path = folder / f"{entry_date}-{_slugify(title)}-{counter}.md"
-        counter += 1
-    _write_entry(
-        path, title, entry_date, "action", session, session_label, "active",
-        [], ["Standard Work"] if lineup_kind == "standard_work" else [], [],
-        "active", "lineup", body,
-        lineup_status="open", lineup_kind=lineup_kind,
-        owner=str(form.get("owner", "")), due_date=due_date, cadence=cadence,
-    )
+    try:
+        path = _new_note_path(title, entry_date)
+        _write_entry(
+            path, title, entry_date, "action", session, session_label, "active",
+            [], ["Standard Work"] if lineup_kind == "standard_work" else [], [],
+            "active", "lineup", body,
+            lineup_status="open", lineup_kind=lineup_kind,
+            owner=str(form.get("owner", "")), due_date=due_date, cadence=cadence,
+        )
+    except OSError:
+        return _render_lineup(request, session, form=form, status_code=503,
+                              error="SKATE could not save this action to the vault. Your entries are kept below. Check that the vault is writable and has free space, then try again.")
     suffix = f"?{urlencode({'session': session})}" if session else ""
     return RedirectResponse(url=f"/lineup{suffix}", status_code=303)
 
@@ -2621,12 +2645,7 @@ async def promote_captured_action(request: Request, file_id: str):
         return RedirectResponse(url="/lineup", status_code=303)
     title = action["text"]
     entry_date = date.today().isoformat()
-    folder = _notes_folder()
-    path = folder / f"{entry_date}-{_slugify(title)}.md"
-    counter = 2
-    while path.exists():
-        path = folder / f"{entry_date}-{_slugify(title)}-{counter}.md"
-        counter += 1
+    path = _new_note_path(title, entry_date)
     body = f"# {title}\n\n## Summary\n\nCaptured in [{source_entry.title}](/entry/{source_entry.file_id}).\n"
     _write_entry(
         path, title, entry_date, "action", source_entry.session, source_entry.session_display if source_entry.session else "",
@@ -2716,13 +2735,7 @@ async def create_note(request: Request):
     lineup_kind = str(form.get("lineup_kind", "action")).strip().lower()
     cadence = str(form.get("cadence", "once")).strip().lower()
 
-    folder = _notes_folder()
-    base_name = f"{entry_date}-{_slugify(title)}.md"
-    path = folder / base_name
-    counter = 2
-    while path.exists():
-        path = folder / f"{entry_date}-{_slugify(title)}-{counter}.md"
-        counter += 1
+    path = _new_note_path(title, entry_date)
 
     _write_entry(
         path,
@@ -3191,6 +3204,15 @@ def serve_attachment(session: str, filename: str):
     return FileResponse(target, media_type=media_type, headers=headers)
 
 
+@app.get("/api/note-originals")
+def read_note_original(source_id: str, offset: int = 0, max_chars: int = 12000):
+    """Page through an archived original for the read-only note viewer."""
+    try:
+        return {"ok": True, **note_sources.read_original(CONVERSATIONS, source_id, offset, max_chars)}
+    except (ValueError, OSError, UnicodeError):
+        return JSONResponse({"ok": False, "error": "The original text could not be opened."}, status_code=404)
+
+
 def _render_note_html(entry) -> str:
     render_body = re.sub(
         r"(?im)^(\s*)(?:[-*]\s+)?\\?#\s*([POAQRSI])(?:\s*:|\s+)",
@@ -3236,6 +3258,7 @@ def view_entry(request: Request, file_id: str):
         {
             "entry": entry,
             "body_html": body_html,
+            "original_sources": note_sources.originals(entry.body, entry.session_key, CONVERSATIONS),
             "embedded_actions": embedded_actions,
             "lineup_today": date.today().isoformat(),
             **sidebar,
@@ -3493,8 +3516,8 @@ async def _reviewed_summary(payload: dict, kind: str, progress=None, cancelled=N
     # Merge without a global six-signal cap that would discard late decisions.
     for key in ("key_points", *note_quality.SIGNAL_KEYS.values(), "tags"):
         combined[key] = list(dict.fromkeys(item for result in results for item in result.get(key, [])))
-    for key in ("gist", "summary", "agent_memory"):
-        if key in combined:
+    for key in ("gist", "summary", "agent_memory", "meeting_summary"):
+        if key in combined or any(result.get(key) for result in results):
             combined[key] = "\n\n".join(dict.fromkeys(result.get(key, "") for result in results if result.get(key))) or empty.get(key, "")
     combined["mode"] = "mixed" if failures and failures < len(parts) else "ai" if ai and parts and not failures else "local"
     if ai and parts:
@@ -4148,13 +4171,18 @@ def _recorder_finalize(include_mic: bool, session: str, session_label: str, mode
 
 @app.post("/api/recorder/start")
 async def recorder_start(request: Request):
-    ok, reason = _recorder_available()
-    if not ok:
-        return JSONResponse({"ok": False, "error": reason}, status_code=400)
     try:
         payload = json.loads((await request.body()).decode("utf-8"))
     except json.JSONDecodeError:
         payload = {}
+    return _recorder_start_capture(payload)
+
+
+def _recorder_start_capture(payload):
+    """Shared start operation for the page and the tray quick-record action."""
+    ok, reason = _recorder_available()
+    if not ok:
+        return JSONResponse({"ok": False, "error": reason}, status_code=400)
     with RECORDER_LOCK:
         if RECORDER.get("state") in {"recording", "stopping", "transcribing"}:
             return JSONResponse({"ok": False, "error": "A recording is already running."}, status_code=409)
@@ -4237,6 +4265,7 @@ def _recorder_status_payload() -> dict:
     state = recorder.get("state", "idle")
     payload = {"state": state, "source": recorder.get("source", "system"), "include_mic": recorder.get("include_mic", True), "warnings": list(recorder.get("errors", []))}
     payload["live_file"] = recorder.get("live_file", "")
+    payload["session"] = recorder.get("session", "unassigned")
     if recorder.get("audio"):
         payload.update(audio=recorder["audio"], audio_url=recorder["audio_url"])
     if state == "recording":
@@ -4298,6 +4327,8 @@ async def recorder_audio(ws: WebSocket):
 def spotter_live_transcripts(file: str = ""):
     if file:
         path = _safe_transcript_path(file)
+        if path is not None and not path.exists() and RECORDER.get("live_file") == file and RECORDER.get("state") in {"recording", "stopping", "transcribing"}:
+            return {"ok": True, "file": path.name, "text": ""}
         if path is None or not path.is_file():
             return JSONResponse({"ok": False, "error": "Transcript not found."}, status_code=404)
         return {"ok": True, "file": path.name, "text": path.read_text(encoding="utf-8")}
@@ -4335,23 +4366,20 @@ def _spotter_live_clean_answer(answer: str) -> str:
     if text.startswith("```"):
         text = re.sub(r"^```[A-Za-z]*\s*", "", text)
         text = re.sub(r"\s*```$", "", text).strip()
-    if text.startswith("{"):
+    if text.startswith(("{", "[")):
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
             data = None
         if isinstance(data, dict):
-            for key in ("text", "answer", "spoken_response", "response", "reply", "message"):
+            if any(key in data for key in ("properties", "$schema", "required")):
+                return ""
+            for key in ("say", "text", "answer", "spoken_response", "response", "reply", "message"):
                 value = data.get(key)
                 if isinstance(value, str) and value.strip():
-                    return value.strip()
-            parts = [v.strip() for v in data.values() if isinstance(v, str) and v.strip()]
-            if parts:
-                return " ".join(parts)
-        # Malformed JSON (e.g. stray quotes): pull out the text value by regex.
-        match = re.search(r'"text"?\s*:\s*"(.*?)"?\s*\}?\s*$', text, re.S)
-        if match and match.group(1).strip():
-            return match.group(1).strip()
+                    return _spotter_live_clean_answer(value)
+        # Never display or read out schemas, metadata, or broken JSON.
+        return ""
     # An answer with no letters ({}, [], punctuation) is not speakable prose.
     if not re.search(r"[A-Za-z]", text):
         return ""
@@ -4406,15 +4434,15 @@ async def spotter_live_ask(request: Request):
 
     answer = ""
     try:
-        answer = _spotter_live_clean_answer(await asyncio.to_thread(_call_llm, _feature_settings(settings, "spotter"), _live_prompt(True)))
-        if not answer and persona:
+        answer = _spotter_live_clean_answer(await asyncio.to_thread(_call_llm, _feature_settings(settings, "spotter"), _live_prompt(True), json_output=False))
+        if not answer:
             # The persona's JSON formatting rules can win over the prose
             # instruction and yield {} — retry once without the persona.
-            answer = _spotter_live_clean_answer(await asyncio.to_thread(_call_llm, _feature_settings(settings, "spotter"), _live_prompt(False)))
+            answer = _spotter_live_clean_answer(await asyncio.to_thread(_call_llm, _feature_settings(settings, "spotter"), _live_prompt(False), json_output=False))
     except (ValueError, KeyError, json.JSONDecodeError, HTTPError, URLError, TimeoutError, OSError) as e:
         return {"ok": False, "error": f"Spotter Live could not reach the model. {e}"}
     if not answer:
-        return {"ok": False, "error": "The model returned an empty answer. Try asking again."}
+        return {"ok": False, "error": "The model did not return a readable answer. Try asking again."}
     return {"ok": True, "answer": answer}
 
 
@@ -4588,9 +4616,17 @@ SKATER_LEVELS = [
 ]
 
 
+def _skater_credit_entries(entries):
+    demo_sessions = {'harborlight-service-access-2026', 'harborlight-volunteer-readiness-2026'}
+    return [e for e in entries if e.session_key not in demo_sessions
+            and getattr(e, 'source', '') != 'fictional nonprofit workshop demo'
+            and not ('harborlight' in getattr(e, 'tags', []) and 'workshop-demo' in getattr(e, 'tags', []))]
+
+
 def _skater_progress(entries) -> dict:
     """Gamified progress: XP from sessions, notes, and landed actions."""
-    session_keys = {e.session_key for e in entries if e.session_key}
+    entries = _skater_credit_entries(entries)
+    session_keys = {e.session for e in entries if e.session}
     note_count = len(entries)
     landed_count = sum(
         1 for e in entries if e.entry_type == "action" and e.lineup_status == "landed"
@@ -4652,9 +4688,42 @@ def stats_page(request: Request):
             "timeline": timeline,
             "top_tags": top_tags,
             "skater": _skater_progress(entries),
+            "dashboard": _stats_dashboard(entries),
             **sidebar,
         },
     )
+
+
+def _stats_dashboard(entries):
+    progress = _skater_progress(entries)
+    credit_entries = _skater_credit_entries(entries)
+    credit_links = sum(len(e.related) + len(e.relationships) for e in credit_entries)
+    credit_originals = {row['source_id'] for e in credit_entries
+                       for row in note_sources.originals(e.body, e.session_key, CONVERSATIONS)}
+    links = sum(len(e.related) + len(e.relationships) for e in entries)
+    originals = {row['source_id'] for e in entries
+                 for row in note_sources.originals(e.body, e.session_key, CONVERSATIONS)}
+    active = [e for e in entries if e.status in ('', 'active') and e.session_status == 'active']
+    full = sum(len(e.body) for e in active)
+    # An illustrative sample, not a claim about logged provider usage.
+    sample_count = min(5, len(active))
+    sample = round(sum(min(len(e.body), 600) for e in active) / len(active) * sample_count) if active else 0
+    full_tokens = (full + 3) // 4
+    sample_tokens = (sample + 3) // 4
+    milestones = [('First Push', 'Capture your first note', len(credit_entries), 1),
+                  ('Session Builder', 'Capture notes in five sessions', progress['sessions'], 5),
+                  ('Connected Lines', 'Add ten evidence links', credit_links, 10),
+                  ('Stuck the Landing', 'Complete your first action', progress['landed'], 1),
+                  ('Source Keeper', 'Preserve an original during cleanup', len(credit_originals), 1)]
+    return dict(links=links, originals=len(originals), active=len(active),
+                full_tokens=full_tokens, sample_tokens=sample_tokens, sample_count=sample_count,
+                fewer=max(0, full_tokens-sample_tokens),
+                reduction=round(100*(full_tokens-sample_tokens)/full_tokens) if full_tokens else 0,
+                levels=[dict(name=name, threshold=threshold, earned=progress['xp'] >= threshold)
+                        for threshold, name, _ in SKATER_LEVELS],
+                milestones=[dict(name=name, description=desc, count=count, target=target,
+                                 earned=count >= target, percent=min(100, int(100*count/target)))
+                            for name, desc, count, target in milestones])
 
 
 @app.get("/grind", response_class=HTMLResponse)
@@ -5206,6 +5275,24 @@ def _tray_recorder_tooltip(status: dict | None = None) -> str:
     return "SKATE — Not recording" + (f" — {detail}" if detail else "")
 
 
+def _tray_can_start_recording(item=None) -> bool:
+    with RECORDER_LOCK:
+        return RECORDER.get('state') not in {'recording', 'stopping', 'transcribing'}
+
+
+def _tray_start_recording(icon, item):
+    response = _recorder_start_capture({'source': 'system', 'include_mic': True,
+                                        'session': 'unassigned', 'session_label': 'Unassigned'})
+    result = json.loads(response.body)
+    if icon:
+        icon.update_menu()
+        try:
+            icon.notify('Recording computer audio + microphone in Unassigned.' if result.get('ok')
+                        else result.get('error', 'Could not start recording.'), 'SKATE')
+        except Exception:
+            pass
+
+
 def _tray_can_stop_recording(item=None) -> bool:
     with RECORDER_LOCK:
         return RECORDER.get("state") == "recording"
@@ -5291,6 +5378,8 @@ def _launch_with_tray(host: str, port: int, open_browser: bool, app_window: bool
 
     menu = pystray.Menu(
         pystray.MenuItem("Open SKATE", on_open, default=True),
+        pystray.MenuItem("Record computer + microphone (Unassigned)", _tray_start_recording,
+                        enabled=_tray_can_start_recording),
         pystray.MenuItem(
             "Stop recording & save", _tray_stop_recording,
             enabled=_tray_can_stop_recording,

@@ -23,8 +23,11 @@ INSTRUCTIONS = """
 SKATE is a governed workshop-memory server. Use search_memory for bounded,
 governance-aware evidence retrieval. Use get_memory_object only when the full
 note is necessary, and trace_evidence when provenance or supporting/conflicting
-relationships matter. Use get_lineup to see open and landed action items and
-recurring Standard Work. Never imply that inactive notes or inactive sessions
+relationships matter. Use get_memory_original to read the preserved dirty notes or raw transcript
+listed in get_memory_object.original_sources. Follow next_offset until null
+for complete long notes or originals. Keep unedited originals distinct from
+reviewed notes when citing evidence. Use get_lineup for open and landed action
+items and recurring Standard Work. Never imply that inactive notes or inactive sessions
 were searched: they are deliberately excluded by the server.
 
 Write access is narrow and additive: add_note creates one new memory object
@@ -60,6 +63,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8766) -> FastMCP:
     server.tool(annotations=read_only)(service.list_active_sessions)
     server.tool(annotations=read_only)(service.search_memory)
     server.tool(annotations=read_only)(service.get_memory_object)
+    server.tool(annotations=read_only)(service.get_memory_original)
     server.tool(annotations=read_only)(service.get_session_context)
     server.tool(annotations=read_only)(service.trace_evidence)
     server.tool(annotations=read_only)(service.get_grind_outputs)

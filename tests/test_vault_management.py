@@ -171,6 +171,21 @@ class VaultTests(unittest.TestCase):
                 vault_trash._original(self.root, relative)
         self.assertEqual(keyfile.read_bytes(), before)
 
+    def test_malformed_trash_metadata_does_not_block_other_restores(self):
+        good = self.remove_note(self.note("good.md")).json()["id"]
+        bad = self.remove_note(self.note("bad.md")).json()["id"]
+        manifest_path = self.root / ".trash" / bad / "manifest.json"
+        original = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for invalid in (None, [], "invalid", {**original, "created_at": None},
+                        {**original, "created_at": 123}, {**original, "state": []}):
+            with self.subTest(manifest=invalid):
+                manifest_path.write_text(json.dumps(invalid), encoding="utf-8")
+                self.assertEqual(self.client.get("/trash").status_code, 200)
+                self.assertIn(good, [row["id"] for row in vault_trash.items(self.root)])
+        response = self.client.post("/api/trash/restore/" + good)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue((self.root / "conversations/shared/good.md").exists())
+
     def test_cached_grind_does_not_return_deleted_note_evidence(self):
         path = self.note("one.md")
         skate_lib.save_grind_snapshot("alpha", {"pains": [{"title": "Old evidence"}]}, skate_lib.load_all_entries())

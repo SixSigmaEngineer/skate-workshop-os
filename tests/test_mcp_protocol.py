@@ -35,6 +35,7 @@ class MCPProtocolTests(unittest.TestCase):
                         "list_active_sessions",
                         "search_memory",
                         "get_memory_object",
+                        "get_memory_original",
                         "get_session_context",
                         "trace_evidence",
                         "get_grind_outputs",

@@ -33,17 +33,17 @@
 <section class="panel" id="meeting-recorder" style="margin-bottom:16px;scroll-margin-top:140px;">
   <h3 style="margin-top:0;">Record with {{ spotter_name }} Live</h3>
   <p class="muted">Choose system audio for Teams, Zoom, or other apps playing through your Windows default speakers or headphones. Choose microphone for a workshop in the room (uses your Windows default microphone).</p>
-  <p class="field-help">Audio is saved on this PC. Live transcription uses the engine shown below; the final transcript is processed locally. Keep this page open for live captions and questions. Recording continues when you navigate away or minimize SKATE.</p>
+  <p class="field-help">Audio is saved on this PC. Live transcription uses the engine shown below; the final transcript is processed locally. You can open New Note or another app screen while Spotter Live keeps running. Use the recording-status link to return without losing your place.</p>
   <p><a href="/about/recording">Recording &amp; transcription guide</a></p>
   <div class="toolbar" style="flex-wrap:wrap;gap:12px;align-items:center;">
     <button class="button primary" id="recStartBtn" type="button">
       <img class="button-icon" src="/static/icons/record.svg?v=red1" alt=""><span>Start recording</span>
     </button>
-    <button class="button" id="recStopBtn" type="button" disabled>Stop &amp; save note</button>
+    <button class="button" id="recStopBtn" type="button" disabled>Stop recording &amp; save</button>
     <label>Session
       <select id="recSession">
-        {% for s in sessions if s.status != 'inactive' %}<option value="{{ s.key }}" data-label="{{ s.label }}">{{ s.label }}</option>{% endfor %}
-        <option value="unassigned" data-label="Unassigned">Unassigned</option>
+        <option value="unassigned" data-label="Unassigned" selected>Unassigned</option>
+        {% for s in sessions if s.status != 'inactive' and s.key != 'unassigned' %}<option value="{{ s.key }}" data-label="{{ s.label }}">{{ s.label }}</option>{% endfor %}
         <option value="__new__">+ Create a new session…</option>
       </select>
     </label>
@@ -71,12 +71,14 @@
 
 <section class="live-grid">
   <div class="panel">
+    <h3 style="margin-top:0;">Live transcript</h3>
+    <p class="field-help">Captions appear here during recording. After you stop, SKATE prepares the final transcript from the saved audio. You can take notes on other screens while recording continues.</p>
     <div class="toolbar" style="flex-wrap: wrap; gap: 10px;">
       <button class="button primary" id="liveToggleBtn" type="button" hidden>
         <img class="button-icon" src="/static/icons/record.svg?v=red1" alt=""><span>Start listening</span>
       </button>
       <input type="hidden" id="engineSelect" value="{{ stt_provider }}">
-      <span><strong>Engine:</strong>
+      <span><strong>Live captions:</strong>
         <span class="file-pill">{% if stt_provider == 'openai' %}OpenAI GPT-Realtime Whisper{% elif stt_provider == 'elevenlabs' %}ElevenLabs Scribe Realtime{% else %}Local Whisper{% endif %}</span>
       </span>
       <a class="button" href="/settings">Change in Settings</a>
@@ -105,9 +107,12 @@
       <button class="button talk-toggle" id="askVoiceBtn" type="button" aria-pressed="false">
         <img class="button-icon" src="/static/icons/start-talking.svg" alt=""><span>Hold a question</span>
       </button>
+      <label><input type="checkbox" id="readRepliesAloud" aria-describedby="replyVoiceHelp"> Read replies aloud</label>
     </div>
+    <p class="field-help" id="replyVoiceHelp">Turn off for text-only chat. This choice is remembered on this device and does not change recording or transcription.</p>
     <div class="chat-compose" style="margin-top:10px;">
-      <textarea id="askInput" rows="2" placeholder="Or type a question about what's been said..."></textarea>
+      <textarea id="askInput" rows="2" aria-describedby="askKeyboardHelp" placeholder="Or type a question about what's been said..."></textarea>
+      <p class="field-help" id="askKeyboardHelp">Enter to send · Alt+Enter for a new line</p>
       <div class="compose-actions">
         <button class="button primary" id="askSendBtn" type="button"><img class="button-icon" src="/static/icons/coach.svg" alt="">Ask</button>
       </div>
@@ -151,6 +156,28 @@ let pendingElevenCommit = "", pendingElevenCommitTimer = null;
 const speakerLabels = new Map();
 let interimEl = null;
 let asking = false;
+let chatHistory = [];
+const liveStateKey = "skate.live.workspace:" + {{ vault_path | string | tojson }};
+function saveLiveState() {
+  try {
+    localStorage.setItem(liveStateKey, JSON.stringify({file: fileName, question: askInput.value}));
+    if (fileName) localStorage.setItem(liveStateKey + ":" + fileName, JSON.stringify({chat: chatHistory, question: askInput.value}));
+  } catch (_) { /* Disk transcripts remain available if browser storage is full. */ }
+}
+function restoreLiveChat() {
+  chatHistory = [];
+  agentLog.replaceChildren();
+  askInput.value = "";
+  try {
+    const saved = JSON.parse(localStorage.getItem(liveStateKey + ":" + fileName) || "{}");
+    if (Array.isArray(saved.chat)) saved.chat.forEach(row => {
+      if (row && typeof row.q === "string" && typeof row.a === "string") logQA(row.q, row.a, false);
+    });
+    if (typeof saved.question === "string") askInput.value = saved.question;
+  } catch (_) {}
+}
+askInput.addEventListener("input", saveLiveState);
+window.addEventListener("pagehide", saveLiveState);
 
 const liveStatusText = document.getElementById("liveStatusText");
 function setStatus(text, live) {
@@ -249,7 +276,8 @@ async function appendToFile(text) {
     await fetch("/api/spotter-live/append", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ file: fileName, text })
+      body: JSON.stringify({ file: fileName, text }),
+      keepalive: true
     });
   } catch (e) { /* keep capturing even if a write fails */ }
 }
@@ -678,9 +706,29 @@ function resumeRoom() {
   setStatus(engineSelect.value === "local" ? "Listening locally · transcript appears in short segments…" : "Transcribing recorded audio…", true);
 }
 
-// ---------- Speak replies (same behavior as Spotter) ----------
+// ---------- Speak replies ----------
+const readRepliesAloud = document.getElementById("readRepliesAloud");
+const replyVoiceKey = "skate.spotterLive.readRepliesAloud";
+readRepliesAloud.checked = SPEAK_ALOUD_FALLBACK;
+try {
+  const saved = localStorage.getItem(replyVoiceKey);
+  if (saved !== null) readRepliesAloud.checked = saved === "true";
+} catch (e) {}
+let replySpeechController = null;
+let finishReplyAudio = null;
+
+function stopReplySpeech() {
+  if (replySpeechController) { replySpeechController.abort(); replySpeechController = null; }
+  if (finishReplyAudio) finishReplyAudio();
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+}
+readRepliesAloud.addEventListener("change", () => {
+  try { localStorage.setItem(replyVoiceKey, String(readRepliesAloud.checked)); } catch (e) {}
+  if (!readRepliesAloud.checked) stopReplySpeech();
+});
+
 function speakBrowser(text) {
-  if (!("speechSynthesis" in window) || !text) return;
+  if (!("speechSynthesis" in window) || !text || !readRepliesAloud.checked || roomActive) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.rate = 1;
@@ -688,43 +736,61 @@ function speakBrowser(text) {
 }
 
 async function speak(text) {
-  if (!text || roomActive) return;
-  let speakAloud = SPEAK_ALOUD_FALLBACK;
+  if (!text || roomActive || !readRepliesAloud.checked) return;
+  stopReplySpeech();
+  const controller = new AbortController();
+  replySpeechController = controller;
+  const canSpeak = () => !controller.signal.aborted && readRepliesAloud.checked && !roomActive;
   let ttsProvider = TTS_PROVIDER_FALLBACK;
   try {
-    const r = await fetch("/api/voice-config");
-    if (r.ok) { const cfg = await r.json(); speakAloud = !!cfg.speak_aloud; ttsProvider = cfg.tts_provider || ttsProvider; }
+    const r = await fetch("/api/voice-config", {signal: controller.signal});
+    if (r.ok) { const cfg = await r.json(); ttsProvider = cfg.tts_provider || ttsProvider; }
   } catch (e) {}
-  if (!speakAloud) return;
+  if (!canSpeak()) return;
   if (ttsProvider === "openai" || ttsProvider === "elevenlabs") {
     try {
       const res = await fetch("/api/speak", {
         method: "POST",
+        signal: controller.signal,
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({text})
       });
       const ct = res.headers.get("content-type") || "";
       if (res.ok && ct.includes("audio")) {
         const blob = await res.blob();
+        if (!canSpeak()) return;
         const audio = new Audio(URL.createObjectURL(blob));
         return new Promise((resolve) => {
-          audio.onended = () => { URL.revokeObjectURL(audio.src); resolve(); };
-          audio.play().catch(() => resolve());
+          let finished = false;
+          const finish = () => {
+            if (finished) return;
+            finished = true;
+            audio.pause();
+            URL.revokeObjectURL(audio.src);
+            if (finishReplyAudio === finish) finishReplyAudio = null;
+            resolve();
+          };
+          finishReplyAudio = finish;
+          audio.onended = finish;
+          audio.onerror = finish;
+          audio.play().catch(finish);
         });
       }
     } catch (err) {}
   }
-  speakBrowser(text);
+  if (canSpeak()) speakBrowser(text);
 }
 
 // ---------- Agent turns ----------
-function logQA(q, a) {
+function logQA(q, a, persist = true) {
   const div = document.createElement("div");
   div.className = "qa";
   const qEl = document.createElement("p"); qEl.className = "q"; qEl.textContent = "You: " + q;
   const aEl = document.createElement("p"); aEl.className = "a"; aEl.textContent = a;
   div.appendChild(qEl); div.appendChild(aEl);
   agentLog.prepend(div);
+  chatHistory.push({q, a});
+  if (persist) saveLiveState();
 }
 
 async function askAgent(question, label) {
@@ -751,6 +817,7 @@ async function askAgent(question, label) {
     asking = false;
     askSendBtn.disabled = false;
     resumeRoom();
+    if (!roomActive) setStatus("Idle", false);
   }
 }
 
@@ -769,7 +836,9 @@ askSendBtn.addEventListener("click", () => {
   askAgent(q);
 });
 askInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); askSendBtn.click(); }
+  if (event.key !== "Enter" || event.isComposing || event.keyCode === 229 || event.altKey) return;
+  event.preventDefault();
+  if (!event.repeat && !askSendBtn.disabled && askInput.value.trim()) askSendBtn.click();
 });
 
 // Voice question: pause the room, capture one utterance, send it.
@@ -984,7 +1053,7 @@ function recRender(status) {
     const mm = String(Math.floor(s / 60)).padStart(2, "0");
     const ss = String(s % 60).padStart(2, "0");
     recStatusText.textContent = "Recording " + mm + ":" + ss;
-    recResult.textContent = (status.warnings || []).length ? "Audio capture problem: " + status.warnings.join("; ") : "";
+    recResult.textContent = (status.warnings || []).length ? "Audio capture problem: " + status.warnings.join("; ") : "Recording continues while you take notes or use other SKATE screens. Stop recording & save when the meeting ends.";
   } else if (state === "stopping") {
     recResult.textContent = "Saving the recording…";
     recStatusText.textContent = "Finishing up\u2026";
@@ -1022,11 +1091,16 @@ async function recPoll() {
     recRender(status);
     toggleBtn.hidden = status.state !== "recording" || roomActive;
     if (!toggleBtn.hidden) updateToggleUI();
-    if (status.state === "saved" && previousState !== "saved" && status.live_file) loadTranscript(status.live_file);
-    if (status.live_file && !fileName) {
-      fileName = status.live_file;
-      filePill.textContent = "transcripts/" + fileName;
-      if (status.state !== "recording") loadTranscript(fileName);
+    if (status.state === "saved" && status.live_file && (!fileName || ["recording", "stopping", "transcribing"].includes(previousState))) await loadTranscript(status.live_file);
+    if (status.live_file && (!fileName || (["recording", "stopping", "transcribing"].includes(status.state) && fileName !== status.live_file))) {
+      await loadTranscript(status.live_file);
+    }
+    if (status.state === "recording" && previousState === "idle" && !roomActive && !recCommandPending) {
+      recSession.value = status.session;
+      recSource.value = status.source || "system";
+      document.getElementById("recMicLabel").style.display = recSource.value === "microphone" ? "none" : "flex";
+      recMic.checked = !!status.include_mic;
+      await startRoom();
     }
     if (status.state === "saved") refreshTranscriptHistory();
     const active = ["recording", "stopping", "transcribing"].includes(status.state);
@@ -1062,6 +1136,8 @@ recStartBtn.addEventListener("click", async () => {
   if (started) {
     const status = await (await fetch("/api/recorder/status", {cache: "no-store"})).json();
     fileName = status.live_file;
+    restoreLiveChat();
+    saveLiveState();
     filePill.textContent = "transcripts/" + fileName;
     transcriptPane.textContent = "";
     await startRoom();
@@ -1074,11 +1150,15 @@ async function loadTranscript(file) {
     const response = await fetch("/api/spotter-live/transcripts?file=" + encodeURIComponent(file));
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || "Could not load transcript.");
+    const changed = fileName !== data.file;
     fileName = data.file;
+    if (changed) restoreLiveChat();
+    saveLiveState();
     filePill.textContent = "transcripts/" + fileName;
     transcriptPane.textContent = data.text;
     transcriptPane.style.whiteSpace = "pre-wrap";
-  } catch (error) { setStatus(error.message, false); }
+    return true;
+  } catch (error) { setStatus(error.message, false); return false; }
 }
 async function refreshTranscriptHistory() {
   try {
@@ -1091,9 +1171,25 @@ async function refreshTranscriptHistory() {
   } catch (error) { /* The current recording remains available. */ }
 }
 document.getElementById("transcriptHistory").addEventListener("change", event => {
+  saveLiveState();
   if (event.target.value) loadTranscript(event.target.value);
+  else fetch("/api/recorder/status").then(response => response.json()).then(status => {
+    if (status.live_file) loadTranscript(status.live_file);
+  });
 });
-refreshTranscriptHistory();
-recPoll();
+window.addEventListener("skate-live-visible", () => {
+  if (window.SKATEWorkspace) window.SKATEWorkspace.refresh();
+  recPoll();
+});
+async function restoreLiveWorkspace() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(liveStateKey) || "{}");
+    if (saved.file) await loadTranscript(saved.file);
+    else if (typeof saved.question === "string") askInput.value = saved.question;
+  } catch (_) {}
+  await refreshTranscriptHistory();
+  await recPoll();
+}
+restoreLiveWorkspace();
 </script>
 {% endblock %}

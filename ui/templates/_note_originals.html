@@ -1,0 +1,7 @@
+<style>#noteOriginals[hidden], #noteOriginals button[hidden] { display: none; }</style>
+<section class="panel" id="noteOriginals" hidden>
+  <h2>Original notes &amp; transcripts</h2>
+  <p class="muted">Your unedited text is preserved here. Cleanup changes only the working version. After you save the note, connected agents can read both versions.</p>
+  <div id="noteOriginalsList"></div>
+</section>
+<script type="application/json" id="noteOriginalsData">{{ original_sources | default([]) | tojson }}</script>

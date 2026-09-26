@@ -70,6 +70,7 @@ Write-Host "`n[1/3] Building standalone app (PyInstaller onedir)..." -Foreground
     --hidden-import embeddings `
     --hidden-import skate_lib `
     --hidden-import note_quality `
+    --hidden-import note_sources `
     --hidden-import audio_uploads `
     --hidden-import ui_themes `
     --hidden-import vault_trash `
@@ -113,6 +114,7 @@ $McpArgs = @(
     "--hidden-import", "frontmatter",
     "--hidden-import", "embeddings",
     "--hidden-import", "skate_lib",
+    "--hidden-import", "note_sources",
     "--hidden-import", "mcp_server.service"
 )
 foreach ($dll in $RuntimeDlls) {

@@ -15,13 +15,14 @@
 
 <section class="panel lineup-add-panel">
   <div class="section-heading"><div><p class="eyebrow">Quick add</p><h2>Add to the Lineup</h2></div></div>
+  {% if lineup_error %}<p class="notice" role="alert">{{ lineup_error }}</p>{% endif %}
   <form method="post" action="/lineup/new" class="form lineup-add-form">
     <div class="lineup-add-main">
-      <label>What needs to happen?<input name="title" placeholder="Send the client readout" required></label>
+      <label>What needs to happen?<input name="title" value="{{ lineup_form.get('title', '') }}" placeholder="Send the client readout" required></label>
       <label>Type
         <select name="lineup_kind" id="lineupKind">
           <option value="action">Action Item</option>
-          <option value="standard_work">Standard Work</option>
+          <option value="standard_work" {% if lineup_form.get('lineup_kind') == 'standard_work' %}selected{% endif %}>Standard Work</option>
         </select>
       </label>
       <label>Session
@@ -34,14 +35,14 @@
       </label>
     </div>
     <div class="lineup-add-meta">
-      <label>Owner<input name="owner" placeholder="Optional"></label>
-      <label>Due<input name="due_date" type="date"></label>
+      <label>Owner<input name="owner" value="{{ lineup_form.get('owner', '') }}" placeholder="Optional"></label>
+      <label>Due<input name="due_date" type="date" value="{{ lineup_form.get('due_date', '') }}"></label>
       <label>Cadence
         <select name="cadence" id="lineupCadence">
-          {% for key, label in lineup_cadences.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+          {% for key, label in lineup_cadences.items() %}<option value="{{ key }}" {% if lineup_form.get('cadence', 'once') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
       </label>
-      <label>Details<input name="details" placeholder="Optional context"></label>
+      <label>Details<input name="details" value="{{ lineup_form.get('details', '') }}" placeholder="Optional context"></label>
       <button class="button primary" type="submit">Add Action</button>
     </div>
   </form>

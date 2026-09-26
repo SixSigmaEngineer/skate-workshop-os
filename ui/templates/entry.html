@@ -42,6 +42,8 @@
 {% endif %}
 <style>.markdown img{max-width:100%;height:auto;border-radius:6px;border:1px solid #e2e8f0;}</style>
 <article class="markdown">{{ body_html | safe }}</article>
+{% include "_note_originals.html" %}
+<script src="/static/note-originals.js?v=1"></script>
 {% if embedded_actions %}
 <section class="note-actions-panel panel">
   <div class="section-heading"><div><p class="eyebrow">Found in this note</p><h2>Action Items</h2></div><a href="/lineup{% if entry.session %}?session={{ entry.session }}{% endif %}">View all actions →</a></div>

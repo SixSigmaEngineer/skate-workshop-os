@@ -83,8 +83,14 @@ def items(root: Path) -> list[dict]:
             try:
                 folder = _folder(root, path.parent.name)
                 manifest = json.loads(_inside(folder, path).read_text(encoding="utf-8"))
+                if not isinstance(manifest, dict):
+                    continue
                 if manifest.get("state") not in {"pending", "trashed"}:
                     continue
+                # A damaged timestamp must not block recovery of otherwise
+                # valid files or sorting of the entire Trash page.
+                if not isinstance(manifest.get("created_at"), str):
+                    manifest["created_at"] = ""
                 paths = manifest["paths"]
                 if not isinstance(paths, list):
                     continue

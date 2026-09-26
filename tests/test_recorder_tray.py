@@ -83,6 +83,29 @@ class RecorderTrayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(self.state["state"], "idle")
 
+    def test_tray_quick_record_uses_both_sources_and_unassigned(self):
+        icon = Mock()
+        with patch.object(app, '_recorder_available', return_value=(True, '')), patch.object(app.threading, 'Thread') as thread:
+            self.assertTrue(app._tray_can_start_recording())
+            app._tray_start_recording(icon, None)
+            self.assertEqual(thread.call_count, 2)
+            self.assertEqual(self.state['session'], 'unassigned')
+            self.assertEqual(self.state['source'], 'system')
+            self.assertTrue(self.state['include_mic'])
+            self.assertFalse(app._tray_can_start_recording())
+            app._tray_start_recording(icon, None)
+            self.assertEqual(thread.call_count, 2)
+        for state in ('stopping', 'transcribing'):
+            self.state['state'] = state
+            self.assertFalse(app._tray_can_start_recording())
+
+    def test_tray_reports_unavailable_capture(self):
+        icon = Mock()
+        with patch.object(app, '_recorder_available', return_value=(False, 'Audio unavailable')):
+            app._tray_start_recording(icon, None)
+        icon.notify.assert_called_once_with('Audio unavailable', 'SKATE')
+        self.assertEqual(self.state['state'], 'idle')
+
     def test_microphone_note_has_accurate_source(self):
         body = app._recorder_note_body("Workshop", "hello", True, "base", source="microphone")
         self.assertIn("Recorded from microphone", body)

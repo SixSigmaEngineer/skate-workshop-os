@@ -22,24 +22,24 @@
 </p>
 
 <p align="center">
-  <a href="https://orionhackathon.devpost.com/"><img src="branding-images/Orion%20Global%20Hackathon.png" alt="Orion Global Hackathon" width="360"></a>
+  <a href="https://orionhackathon.devpost.com/"><img src="branding-images/Orion-Hackathon-Winner.png" alt="SKATE — Orion Global Hackathon 2026 Winner, on Devpost" width="800"></a>
 </p>
 
 <p align="center">
-  <strong><a href="https://orionhackathon.devpost.com/">OrionHackathon 2026</a> | Productivity &amp; Enterprise Solutions</strong><br>
-  <a href="#">Demo video (link coming with submission)</a>
+  <strong>🏆 Hackathon Winner — <a href="https://orionhackathon.devpost.com/">Orion Global Hackathon 2026 on Devpost</a></strong>
 </p>
 
 > *You can't vibe code personality.* SKATE has attitude: skateboard themes, Spotter, The GRIND, and actions you land. Built for the energy of a real workshop, with human judgment at the center.
 
 ---
 
-## Hackathon submission
+## Hackathon winner
 
 | | |
 |---|---|
 | **Event** | [Orion Global Hackathon 2026](https://orionhackathon.devpost.com/) — Where Operations Research Meets Innovation |
 | **Category** | **Productivity & Enterprise Solutions** |
+| **Recognition** | **Hackathon Winner** |
 | **Current source** | v1.2.0 — September workshop updates; testing continues |
 
 ---
@@ -81,7 +81,15 @@ SKATE treats a workshop as a data-generating process and applies a disciplined p
 Testing is continuing. These additions are in the source; packaged apps need a new build. Installer downloads are published separately on [GitHub Releases](https://github.com/SixSigmaEngineer/skate-workshop-os/releases).
 
 - **Record a Meeting, keep both files.** Capture PC audio and your microphone, create a session from the recording dropdown, and save a WAV plus a linked transcript note. Audio is saved before transcription, so it remains available if transcription fails.
-- **Recording controls in the tray.** Closing the desktop window hides SKATE while capture continues. A skateboard means not recording; a red circle means recording. Hover for status and elapsed time, or right-click **Stop recording & save**. Keep SKATE running until **Audio & transcript saved** appears.
+- **Quick capture from the Windows tray.** Right-click the SKATE icon and choose **Record computer + microphone (Unassigned)**. New Spotter Live recordings default to Unassigned unless you explicitly choose a session or arrive from a session link.
+- **Move between recording and notes.** Spotter Live stays running while you visit other screens. Return using the recording-status link; your workspace and note drafts are preserved during navigation.
+- **Text chat when you want it.** Turn off **Read replies aloud** in Spotter Live. In both Spotter screens, **Enter** sends and **Alt+Enter** adds a line. Live chat also guards against displaying response schemas instead of an answer.
+- **Keep the original and the cleaned version.** **Use reviewed notes** archives the untouched source; **Save Memory Object** links both versions for MCP. Expand **Original notes & transcripts** to read it. Repeated cleanup retains earlier originals. Summary prose focuses on the work, with hashtags unchanged.
+- **Skate merit badges and clearer Stats.** Thirteen illustrated badges cover eight levels and five milestones. Harborlight demo sessions earn no XP or milestone credit. Token estimates recalculate from current active notes and compare a sample excerpt scenario with full note bodies; they are not cumulative usage or dollar savings.
+- **Review Connections guidance.** A compact info popup explains suggested metadata and evidence links; you choose which proposals to apply.
+- **OneNote import guidance.** Export pages or sections to Word `.docx`, then preview folder-to-session grouping and optional heading splits. This is a text-only importer: embedded photos/files are not copied, PDF has no OCR, and `.one`, `.onepkg`, `.mht`, `.xps`, and notebook ZIPs are unsupported.
+- **Reliability and crew credits.** Long action titles no longer break note filenames; save failures keep entered values. About permanently thanks founding testers **Brian Khorshad** and **Joe Wise**, with space for future crew members.
+- **Recording controls in the tray.** Closing the desktop window hides SKATE while capture continues. A skateboard means not recording; a red circle means recording. Hover for status and elapsed time, or right-click to start **Record computer + microphone (Unassigned)** or **Stop recording & save**. Keep SKATE running until **Audio & transcript saved** appears.
 - **Long-workshop cleanup with progress.** Review the complete transcript in sections, with up to three concurrent cloud requests and a **Stop cleanup** control. Review or edit the proposal before applying it; the original text is preserved as an attachment. An optional workshop focus helps separate useful evidence from chatter. No AI mode uses local rules and still needs human review.
 - **A graph you can navigate as workshops grow.** All sessions opens with signals collapsed. Browse up to 80 notes per page, then explore a selected note's signals in pages of 40 with type filters. Search reaches every note and signal in scope. Fewer labels and a layout that settles reduce clutter and repeated calculations; the full graph still loads for search.
 - **Recoverable removal and key controls.** Trash icons remove a note or session, and the Trash page restores it. Settings lets you remove saved API keys without replacing them.
@@ -222,7 +230,7 @@ The 2D and 3D views make the same memory inspectable as a network of notes, them
 
 ## MCP: the agent-memory interface
 
-SKATE's MCP server lets any MCP-enabled agent ask for the smallest useful slice of workshop memory rather than receiving an entire meeting transcript. Reads are governed and bounded; writes are deliberately narrow — an agent can add new notes and sessions with explicit agent provenance, but can never edit or delete existing memory, and MCP clients ask the human for approval before each write. MCP is the interface; SKATE's governed Markdown, relationships, retrieval, and provenance remain the memory architecture behind it.
+SKATE's MCP server lets any MCP-enabled agent ask for the smallest useful slice of workshop memory rather than receiving an entire meeting transcript. Reads are governed and bounded; writes are deliberately narrow — an agent can add new notes and sessions with explicit agent provenance, but can never edit or delete existing memory, and write approval behavior depends on the MCP client’s permission settings. MCP is the interface; SKATE's governed Markdown, relationships, retrieval, and provenance remain the memory architecture behind it.
 
 ```mermaid
 sequenceDiagram
@@ -243,7 +251,8 @@ Available tools:
 |---|---|
 | `list_active_sessions` | Show the workshop memories available to an agent |
 | `search_memory` | Return a small ranked evidence set for a query |
-| `get_memory_object` | Read one complete governed memory object |
+| `get_memory_object` | Read a governed note in bounded pages; returns linked original sources |
+| `get_memory_original` | Read a linked unedited original in bounded pages; follows the parent note's access rules |
 | `get_session_context` | Retrieve a bounded overview of one session |
 | `trace_evidence` | Follow provenance and typed relationships |
 | `get_grind_outputs` | Retrieve the most recent design-thinking synthesis |
@@ -281,7 +290,9 @@ Stopping saves **both the WAV audio and a markdown transcript note** in that ses
 
 In the desktop tray app, closing the window hides it while recording continues. The tray shows a skateboard when not recording and a red circle during capture. Hover for recording status or transcription progress. Right-click **Stop recording & save** to finish without reopening the window. **Exit SKATE** closes the application, so wait until audio and transcript are saved before exiting.
 
-For an existing phone or field recording, import the audio/video file through the note editor. Imported files are processed temporarily; keep their originals separately. The PC recorder and imported-file transcription stay local. The separate **Start listening** room-caption feature uses the local or cloud engine selected in Settings and needs Spotter Live to remain open. The Info tab includes a **How to record & transcribe a meeting** walkthrough.
+For an existing phone or field recording, import the audio/video file through the note editor. Imported files are processed temporarily; keep their originals separately. The PC recorder and imported-file transcription stay local. The separate **Start listening** room-caption feature uses the local or cloud engine selected in Settings and continues while you navigate within SKATE’s preserved live workspace. The Info tab includes a **How to record & transcribe a meeting** walkthrough.
+
+After cleanup, agents can use `get_memory_object` to find `original_sources`, then `get_memory_original` with the note's `memory_id` and a linked `source_id`. Continue with `next_offset` until it is null to read long sources completely. Save the note first and restart the updated MCP server/client to load the new tool.
 
 ### Stream Deck Neo control surface
 
@@ -428,6 +439,16 @@ skate-workshop-os/
 - Deeper analytics: frequency, co-occurrence, and trend views over typed signals to support prioritization.
 - macOS and Linux launchers.
 - Richer MCP write tools (relationship linking, action status updates) behind the same human approval gates.
+
+## Push this source update to GitHub
+
+The maintainer's local **Push SKATE to GitHub.bat** stages eligible files, creates a commit, and pushes `main` to `SixSigmaEngineer/skate-workshop-os`. Review `git status --short` first, then double-click the batch file or pass a commit message from a terminal. The batch file stays local and is intentionally ignored by Git.
+
+Source, tests, documentation, and generated badge/winner artwork are included. Local settings, credentials, recordings, original-note attachments, caches, and private vault data must stay excluded. A source push does **not** rebuild or publish an installer: run **Build Installer.bat**, test the resulting installer, and publish the executable separately when ready.
+
+## The crew behind the ride
+
+Thank you to the dev team for building the ramps and helping SKATE land each new idea. Founding testers **Brian Khorshad** and **Joe Wise** took the early runs, found the rough spots, and helped make the next ride better. Their credits are part of the app, independent of any user's vault.
 
 ## License
 

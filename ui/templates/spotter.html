@@ -42,7 +42,8 @@
     </div>
 
     <div class="chat-compose">
-      <textarea id="chatInput" rows="3" placeholder="Type a question, paste a workshop capture, or tap Start talking."></textarea>
+      <textarea id="chatInput" rows="3" aria-describedby="chatKeyboardHelp" placeholder="Type a question, paste a workshop capture, or tap Start talking."></textarea>
+      <p class="field-help" id="chatKeyboardHelp">Enter to send · Alt+Enter for a new line</p>
       <div class="compose-actions">
         <button class="button talk-toggle" id="talkBtn" type="button" aria-pressed="false">
           <img class="button-icon" src="/static/icons/start-talking.svg" alt=""><span>Start talking</span>
@@ -455,10 +456,9 @@ function exportMarkdown() {
 sessionSearch.addEventListener("input", resolveSession);
 sendBtn.addEventListener("click", () => sendToSpotter(chatInput.value, activeMode));
 chatInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    sendBtn.click();
-  }
+  if (event.key !== "Enter" || event.isComposing || event.keyCode === 229 || event.altKey) return;
+  event.preventDefault();
+  if (!event.repeat && !sendBtn.disabled && chatInput.value.trim()) sendBtn.click();
 });
 talkBtn.addEventListener("click", toggleListening);
 exportMdBtn.addEventListener("click", exportMarkdown);

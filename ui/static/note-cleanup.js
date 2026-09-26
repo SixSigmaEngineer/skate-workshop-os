@@ -124,7 +124,9 @@ document.getElementById('applyCleanup').addEventListener('click', async () => {
   button.disabled = true;
   try {
     status.textContent = 'Saving the original text attachment…';
-    const params = new URLSearchParams({session: attachSessionValue(), filename: 'original-note-' + Date.now() + '.txt'});
+    // A stable archive location keeps originals reachable if the note changes session.
+    const archiveId = globalThis.crypto?.randomUUID?.() || (Date.now() + '-' + Math.random().toString(16).slice(2));
+    const params = new URLSearchParams({session: 'note-originals', filename: 'original-note-' + archiveId + '.txt'});
     const response = await fetch('/api/attachments?' + params, {method: 'POST', body: new Blob([pending.source], {type: 'text/plain;charset=utf-8'})});
     const archive = await response.json();
     if (!response.ok || !archive.ok) throw new Error(archive.error || 'The original could not be saved.');
@@ -138,9 +140,9 @@ document.getElementById('applyCleanup').addEventListener('click', async () => {
       if (start >= 0) result = pending.source.slice(0, start).trimEnd() + '\n\n' + proposed;
     }
     // Keep image/file attachments visible after replacing a note's prose.
-    const attachments = pending.source.match(/!?\[[^\]\n]*\]\(attachments\/[^)\n]+\)/g) || [];
+    const attachments = pending.source.match(/!?\[[^\]\n]*\]\((?:attachments\/|\/entry\/[a-z0-9][a-z0-9_-]*\/attachments\/)[^)\n]+\)/g) || [];
     [...new Set(attachments)].forEach(link => { if (!result.includes(link)) result += '\n\n' + link; });
-    editor.value = result.trim() + '\n\n[Original note text](' + archive.path + ')\n';
+    editor.value = result.trim() + '\n\n[Original notes / transcript](/entry/note-originals/' + archive.path + ')\n';
     const tags = pending.data.summary?.tags || [];
     const field = document.getElementById('tags');
     const existing = field.value.split(',').map(tag => tag.trim()).filter(Boolean);
@@ -149,8 +151,9 @@ document.getElementById('applyCleanup').addEventListener('click', async () => {
     saveDraft();
     refreshSummarizeAvailability();
     refreshAttachGallery();
+    window.refreshNoteOriginals?.(true);
     document.getElementById('cleanupPreview').hidden = true;
-    document.getElementById('statusLine').textContent = 'Reviewed notes applied. Original text attached. Save the note to finish.';
+    document.getElementById('statusLine').textContent = 'Cleaned working notes ready. Your unedited original is preserved above. Save the note so connected agents can access both versions.';
     pendingCleanup = null;
   } catch (error) { status.textContent = error.message || 'Cleanup could not be applied.'; }
   finally { button.disabled = false; }

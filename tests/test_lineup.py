@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -63,6 +64,25 @@ class LineupTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 303)
         self.assertEqual(skate_lib.load_all_entries()[0].lineup_status, "landed")
+
+    def test_long_action_titles_save_from_both_forms_without_losing_text(self):
+        title = "Follow up with the workshop owners and confirm the process improvement details " * 5
+        for route in ("/lineup/new", "/new"):
+            with self.subTest(route=route):
+                response = self.client.post(route, data={"title": title, "entry_type": "action"}, follow_redirects=False)
+                self.assertEqual(response.status_code, 303)
+        entries = skate_lib.load_all_entries()
+        self.assertEqual(len(entries), 2)
+        self.assertTrue(all(entry.title == title.strip() for entry in entries))
+        self.assertTrue(all(len(entry.path.name) < 120 for entry in entries))
+
+    def test_failed_action_save_keeps_form_values_and_explains_recovery(self):
+        with patch.object(skate_app, "_write_entry", side_effect=PermissionError("locked")):
+            response = self.client.post("/lineup/new", data={"title": "Confirm owners", "owner": "Brian", "details": "Retain this context"})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("could not save", response.text)
+        for value in ("Confirm owners", "Brian", "Retain this context"):
+            self.assertIn(value, response.text)
 
     def test_standard_work_advances_to_its_next_cycle(self):
         today = date.today()

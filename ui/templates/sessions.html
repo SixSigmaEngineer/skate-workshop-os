@@ -2,10 +2,26 @@
 {% from "_trash_button.html" import trash_button %}
 {% block title %}Sessions{% endblock %}
 {% block content %}
+<style>
+.connection-help { position:relative; display:inline-block; margin-top:6px; }
+.connection-help > button { background:none; border:0; padding:4px 0; color:var(--accent,#356aa2); cursor:pointer; font:inherit; font-size:.85rem; }
+.connection-help-popup { position:absolute; top:100%; left:0; width:340px; max-width:calc(100vw - 90px); padding:16px; border:1px solid var(--line,#dce4ee); border-radius:10px; background:var(--panel,#fff); color:var(--text,#233747); box-shadow:0 8px 24px #182d4326; z-index:50; font-size:.85rem; line-height:1.5; }
+.connection-help-popup[hidden] { display:none; }
+.connection-help-popup p { margin:0 0 10px; }
+.connection-help-popup p:last-child { margin-bottom:0; }
+</style>
 <section class="pagehead library-head">
   <div>
     <h1>Sessions</h1>
     <p class="muted">Group notes into workshops, interviews, research passes, and readouts.</p>
+    <div class="connection-help" id="connectionHelp">
+      <button type="button" aria-expanded="false" aria-controls="connectionHelpPopup" aria-describedby="connectionHelpPopup">ⓘ What does Review Connections do?</button>
+      <div class="connection-help-popup" id="connectionHelpPopup" role="tooltip" hidden>
+        <p>Suggests note types, themes, tags, and evidence links across the session’s active notes. These help you and your agents trace decisions back to their sources.</p>
+        <p>You choose what to keep. Nothing changes until <strong>Apply Selected</strong>.</p>
+        <p>Evidence links need your configured AI provider; without AI, SKATE checks types, themes, and tags locally.</p>
+      </div>
+    </div>
   </div>
   <div class="toolbar"><a class="button" href="/trash"><img class="button-icon" src="/static/icons/trash.svg" alt="">Trash</a><a class="button primary" href="/sessions/new">New session</a></div>
 </section>
@@ -65,6 +81,20 @@
 </dialog>
 
 <script>
+(() => {
+  const help = document.getElementById('connectionHelp');
+  const button = help.querySelector('button');
+  const popup = document.getElementById('connectionHelpPopup');
+  const show = value => { popup.hidden = !value; button.setAttribute('aria-expanded', String(value)); };
+  let pinned = false;
+  help.addEventListener('mouseenter', () => show(true));
+  help.addEventListener('mouseleave', () => { if (!pinned && document.activeElement !== button) show(false); });
+  button.addEventListener('focus', () => show(true));
+  button.addEventListener('click', () => { pinned = !pinned; show(pinned); });
+  help.addEventListener('focusout', event => { if (!help.contains(event.relatedTarget)) { pinned = false; show(false); } });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') { pinned = false; show(false); } });
+  document.addEventListener('click', event => { if (!help.contains(event.target)) { pinned = false; show(false); } });
+})();
 const connectionReviewDialog = document.getElementById("connectionReviewDialog");
 const connectionReviewTitle = document.getElementById("connectionReviewTitle");
 const connectionReviewProgress = document.getElementById("connectionReviewProgress");

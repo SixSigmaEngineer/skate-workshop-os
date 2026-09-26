@@ -521,12 +521,19 @@
 <section class="settings-section" id="onenoteImport">
   <h2><img src="/static/onenote-logo.png" alt="OneNote" style="height:30px;width:30px;vertical-align:-7px;margin-right:9px">Import from OneNote</h2>
   <p class="muted">
-    Bring your Microsoft OneNote content into SKATE. Each <strong>Notebook</strong> becomes a
-    <strong>session</strong>; each <strong>page</strong> becomes a <strong>note</strong>.
-    First export your OneNote (in OneNote desktop: <em>File &rarr; Export &rarr; Notebook or Section &rarr; Word Document</em>,
-    or use Markdown / HTML / PDF), copy the files to this computer, then point SKATE at that folder.
+    Import text from exported OneNote pages or sections. In OneNote desktop, choose
+    <em>File &rarr; Export &rarr; Page or Section &rarr; Word Document (.docx)</em>.
+    For the most predictable result, export each page as a separate file and turn off heading splitting.
+    Put the exported files in a folder on this computer, then select that folder below.
     Supported: <code>.docx</code>, <code>.md</code>, <code>.html</code>, <code>.txt</code>, and <code>.pdf</code>.
   </p>
+  <p class="muted">For one notebook, choose <strong>Put everything in one session</strong> and enter its name.
+    For several notebooks, create one subfolder per notebook inside the selected export folder; each subfolder becomes a session.
+    SKATE does not read notebook structure from the export itself. Preview the note titles before importing.</p>
+  <p class="muted"><strong>Text only:</strong> embedded photos, drawings, audio, and attached files are not copied into SKATE.
+    PDF imports extract selectable text, with no OCR, and create one note per PDF.
+    Keep your original exports. Native <code>.one</code> / <code>.onepkg</code>, notebook ZIPs,
+    <code>.mht</code>, and <code>.xps</code> are not supported. Markdown and HTML must already be converted exports.</p>
 
   <label>Export folder (full path)
     <span style="display:flex; gap:.5rem; align-items:center; margin-top:.25rem;">
@@ -546,7 +553,7 @@
     <input type="text" id="onSessionName" value="OneNote Import" autocomplete="off">
   </label>
 
-  <label><input type="checkbox" id="onSplit" checked> Split Word / HTML files into one note per page (by heading)</label>
+  <label><input type="checkbox" id="onSplit" checked> Split Word / HTML / Markdown / text files at top-level headings (these may not match OneNote pages)</label>
 
   <div class="row" style="display:flex; gap:.5rem; margin-top:.5rem;">
     <button class="button" type="button" id="onPreviewBtn">Preview</button>
@@ -614,6 +621,7 @@
       return;
     }
     let html = "";
+    (plan.warnings || []).forEach((warning) => { html += `<p class="muted">${esc(warning)}</p>`; });
     if (imported) {
       html += `<p><strong>Imported ${plan.written} note(s)</strong> into ${esc((plan.sessions_created || []).length)} session(s).</p>`;
     } else {

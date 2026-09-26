@@ -1,7 +1,17 @@
 {% extends "base.html" %}
+{% from "_skate_badges.html" import patch %}
 {% block title %}Stats{% endblock %}
 {% block content %}
-<section class="pagehead"><h1>Stats</h1></section>
+<style>
+.stats-deck {display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin:18px 0 28px}
+.stats-tile {border:1px solid var(--line,#dce4ee);border-radius:14px;padding:20px;background:var(--panel,#fff)}
+.stats-tile strong {display:block;font-size:1.6rem;color:var(--accent,#356aa2)}
+.stats-badge {display:block;width:140px;max-width:100%;height:auto;margin:0 auto 16px;filter:grayscale(1);opacity:.55}
+.stats-earned .stats-badge {filter:drop-shadow(0 5px 3px #172b3a22);opacity:1}
+.stats-tile h3 {margin:8px 0}.stats-tile progress {width:100%;accent-color:#28776c}
+.stats-context {padding:24px;border:1px solid var(--line,#dce4ee);border-radius:16px;margin:24px 0;background:var(--panel,#fff)}
+</style>
+<section class="pagehead"><div><h1>Your skatepark</h1><p class="muted">Capture the evidence. Connect the lines. Land the next move.</p></div></section>
 
 <section class="skater-card">
   <div class="skater-head">
@@ -27,9 +37,47 @@
   </div>
 </section>
 
-<section class="grid stats">
-  <div><strong>{{ total }}</strong><span>Total</span></div>
-  <div><strong>{{ top_tags | length }}</strong><span>Top tags</span></div>
+<h2>Your badge collection</h2>
+<p class="muted">Level badges unlock with XP. Progress reflects your notes and actions currently in this vault. Bundled Harborlight demo sessions do not earn XP or milestone credit.</p>
+<div class="stats-deck">
+{% for badge in dashboard.levels %}
+  <article class="stats-tile {% if badge.earned %}stats-earned{% endif %}">
+    {{ patch(badge.name) }}
+    <h3>{{ badge.name }}</h3><p>{{ badge.threshold }} XP · {{ 'Earned' if badge.earned else 'Locked' }}</p>
+  </article>
+{% endfor %}
+</div>
+<h2>Land these milestones</h2>
+<div class="stats-deck">
+{% for badge in dashboard.milestones %}
+  <article class="stats-tile {% if badge.earned %}stats-earned{% endif %}">
+    {{ patch(badge.name) }}
+    <h3>{{ badge.name }}</h3><p>{{ badge.description }}</p>
+    <progress value="{{ badge.percent }}" max="100" aria-label="{{ badge.name }} progress"></progress>
+    <p>{{ 'Earned' if badge.earned else 'In progress' }} · {{ badge.count }} / {{ badge.target }}</p>
+  </article>
+{% endfor %}
+</div>
+<h2>Your knowledge collection</h2>
+<div class="stats-deck">
+  {% for value, label in [(total, 'Notes'), (skater.sessions, 'Sessions with notes'), (dashboard.links, 'Recorded evidence links'), (dashboard.originals, 'Preserved originals'), (skater.landed, 'Landed actions')] %}
+  <div class="stats-tile"><strong>{{ value }}</strong><span>{{ label }}</span></div>
+  {% endfor %}
+</div>
+<section class="stats-context">
+  <p class="eyebrow">Illustrative estimate · not recorded usage</p>
+  <h2>Less context, more room to think</h2>
+  <p>What could change if an agent received short excerpts instead of every active note?</p>
+  <p class="muted">Recalculated from your current notes whenever you open or refresh this page. This is not a running total of AI usage.</p>
+  <div class="stats-deck">
+    <div class="stats-tile"><strong>~{{ '{:,}'.format(dashboard.full_tokens) }}</strong>tokens in {{ dashboard.active }} active note bodies</div>
+    <div class="stats-tile"><strong>~{{ '{:,}'.format(dashboard.sample_tokens) }}</strong>tokens in a {{ dashboard.sample_count }}-note excerpt scenario</div>
+    <div class="stats-tile"><strong>~{{ dashboard.reduction }}% less</strong>~{{ '{:,}'.format(dashboard.fewer) }} fewer tokens in this scenario</div>
+  </div>
+  <details><summary>How this estimate works</summary>
+    <p>We estimate one token per four characters. The comparison uses the average length of active note bodies capped at 600 characters, multiplied by up to five notes. Inactive notes and sessions are excluded. Original attachments, prompts, metadata, and answers are not included.</p>
+    <p>This is a sample comparison against sending all active note bodies in this vault, not measured MCP savings or a session-specific retrieval. Actual retrieval depends on the question and may need full sources. It does not measure total tokens saved, money saved, or answer quality.</p>
+  </details>
 </section>
 <h2>Top tags</h2>
 <div class="chips roomy">{% for tag, count in top_tags %}<span>{{ tag }} {{ count }}</span>{% endfor %}</div>

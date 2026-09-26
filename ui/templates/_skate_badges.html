@@ -1,0 +1,4 @@
+{% macro patch(name) %}
+{% set files = {'Grom':'grom','Pusher':'pusher','Ollie':'ollie','Kickflip':'kickflip','Boardslide':'boardslide','50-50 Grind':'50-50-grind','Vert Ripper':'vert-ripper','900 Legend':'900-legend','First Push':'first-push','Session Builder':'session-builder','Connected Lines':'connected-lines','Stuck the Landing':'stuck-the-landing','Source Keeper':'source-keeper'} %}
+<img class="stats-badge" src="/static/badges/{{ files[name] }}.png?v=generated-1" alt="{{ name }} embroidered skate merit badge" width="140" height="140" loading="lazy">
+{% endmacro %}

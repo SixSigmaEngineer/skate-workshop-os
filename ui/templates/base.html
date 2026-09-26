@@ -7,6 +7,18 @@
   <link rel="icon" href="/favicon.ico?v=2">
   <link rel="stylesheet" href="/static/style.css?v=20260912">
   <link rel="stylesheet" href="/static/themes.css?v=20260913-progress">
+  <script src="/static/live-workspace.js?v=20260924-no-banner"></script>
+  <script src="/static/app-navigation.js?v=1" defer></script>
+  <style>
+    .live-workspace-panel { position: fixed; inset: 0; z-index: 10000; display: flex; flex-direction: column; background: var(--bg, white); zoom: calc(1 / var(--app-zoom, 1)); }
+    .live-workspace-panel[hidden], .live-workspace-return[hidden] { display: none; }
+    .live-workspace-panel iframe { flex: 1; width: 100%; min-height: 0; border: 0; }
+    .live-workspace-return { position: fixed; bottom: 16px; right: 24px; z-index: 1000; }
+    .page-navigation { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+    .recording-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--line, #ddd); border-radius: 8px; }
+    .recording-banner[hidden] { display: none; }
+    .recording-banner[data-state="recording"]::before { content: "●"; color: #dc2626; }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -76,6 +88,13 @@
       </div>
     </aside>
     <main class="content">
+      <div class="page-navigation">
+        <button type="button" class="button" data-app-back aria-label="Go back to the previous screen">← Back</button>
+        <div class="recording-banner" data-recording-banner hidden role="status">
+          <span data-recording-message></span>
+          <a href="/spotter-live#meeting-recorder">View recording</a>
+        </div>
+      </div>
       <div class="workspace-tabs" data-workspace-tabs hidden aria-label="Open note drafts"></div>
       {% block content %}{% endblock %}
     </main>
@@ -109,7 +128,7 @@
       localStorage.removeItem(workspaceDraftPrefix + id);
       if (navigate && currentTabId === id) {
         const fallback = remaining[Math.max(0, Math.min(index - 1, remaining.length - 1))];
-        window.location.href = fallback ? fallback.url : "/";
+        window.SKATENavigate(fallback ? fallback.url : "/");
         return;
       }
       renderTabs();
@@ -135,7 +154,7 @@
         label.className = "workspace-tab-label";
         label.textContent = tab.title || `Untitled ${index + 1}`;
         open.append(dot, label);
-        open.addEventListener("click", () => { window.location.href = tab.url; });
+        open.addEventListener("click", () => { window.SKATENavigate(tab.url); });
 
         const close = document.createElement("button");
         close.type = "button";
@@ -164,7 +183,7 @@
       const tab = {id, title: `Untitled ${tabs.length + 1}`, url: url.pathname + url.search};
       tabs.push(tab);
       writeTabs(tabs);
-      window.location.href = tab.url;
+      window.SKATENavigate(tab.url);
     };
     const renameTab = (id, title) => {
       const tabs = readTabs();
@@ -174,7 +193,7 @@
       writeTabs(tabs);
       renderTabs();
     };
-    window.SKATEWorkspace = {createDraftTab, renameTab, removeTab, draftPrefix: workspaceDraftPrefix};
+    window.SKATEWorkspace = {createDraftTab, renameTab, removeTab, refresh: renderTabs, draftPrefix: workspaceDraftPrefix};
 
     const submittedTabId = sessionStorage.getItem(submittedTabKey);
     if (submittedTabId && window.location.pathname.startsWith("/entry/")) {
@@ -246,7 +265,7 @@
     });
     const combo = (event) => event.ctrlKey && event.altKey && event.shiftKey && !event.metaKey;
     const go = (url) => {
-      window.location.href = url;
+      window.SKATENavigate(url);
     };
     document.addEventListener("keydown", (event) => {
       if (!combo(event)) return;

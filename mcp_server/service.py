@@ -19,6 +19,8 @@ if str(UI_DIR) not in sys.path:
     sys.path.insert(0, str(UI_DIR))
 
 import embeddings  # noqa: E402
+import note_sources  # noqa: E402
+import skate_lib  # noqa: E402
 from skate_lib import (  # noqa: E402
     Entry,
     SKATE_ROOT,
@@ -202,7 +204,12 @@ def search_memory(query: str, session: str = "", top_k: int = 5) -> dict[str, An
     }
 
 
-def get_memory_object(memory_id: str, max_body_chars: int = MAX_BODY_CHARS) -> dict[str, Any]:
+def get_memory_object(memory_id: str, max_body_chars: int = MAX_BODY_CHARS, offset: int = 0) -> dict[str, Any]:
+    """Read working/cleaned notes. Original sources are listed separately; use
+    get_memory_original to read raw notes/transcripts. Follow next_offset for
+    every page of a long note. Originals are never silently substituted for
+    reviewed evidence.
+    """
     entry = find_entry_by_id((memory_id or "").strip())
     if entry is None:
         return {"error": "Memory object not found.", "memory_id": memory_id}
@@ -212,18 +219,42 @@ def get_memory_object(memory_id: str, max_body_chars: int = MAX_BODY_CHARS) -> d
         return {"error": "Memory object is inactive or belongs to an inactive session.", "memory_id": memory_id}
     limit = _clamp(max_body_chars, 1000, MAX_BODY_CHARS)
     body = entry.body or ""
+    start = max(0, int(offset))
+    end = min(len(body), start + limit)
     result = _entry_card(entry, excerpt_chars=1200)
     result.update(
         {
             "status": "active",
             "participants": entry.participants,
-            "body": body[:limit],
-            "body_truncated": len(body) > limit,
+            "body": body[start:end],
+            "body_truncated": end < len(body),
+            "offset": start,
+            "next_offset": end if end < len(body) else None,
+            "total_chars": len(body),
+            "original_sources": note_sources.originals(body, entry.session_key, skate_lib.CONVERSATIONS),
             "relationships": entry.relationships
             + [{"type": "references", "target": target, "note": ""} for target in entry.related],
         }
     )
     return result
+
+
+def get_memory_original(memory_id: str, source_id: str, offset: int = 0, max_chars: int = MAX_BODY_CHARS) -> dict[str, Any]:
+    """Read original dirty notes or a raw transcript linked to an active note.
+    Get source_id from get_memory_object.original_sources. Follow next_offset
+    until null to read the full original. This unedited source may contain
+    off-topic material excluded from the cleaned version; do not treat it as
+    reviewed evidence. The same active-note/session governance applies.
+    """
+    memory = get_memory_object(memory_id, max_body_chars=1000)
+    if "error" in memory:
+        return memory
+    if not any(row["source_id"] == source_id for row in memory["original_sources"]):
+        return {"error": "Original source is not linked to this active memory object."}
+    try:
+        return {"memory_id": memory_id, **note_sources.read_original(skate_lib.CONVERSATIONS, source_id, offset, max_chars)}
+    except (ValueError, OSError, UnicodeError):
+        return {"error": "Original source could not be read."}
 
 
 def get_session_context(session: str, query: str = "", top_k: int = 8) -> dict[str, Any]:

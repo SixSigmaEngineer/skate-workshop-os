@@ -116,3 +116,22 @@ Stopping now saves a permanent WAV in the chosen session's attachments before tr
 - Graph changes passed all 138 Python tests and eight JavaScript graph tests. The graph tests cover preservation and full paging of 910 signals, filtered pages, searching to the final signal, parent context, empty views, and a collection with 2,000 notes and 10,000 signals. Browser checks used 35 notes/910 signals, then 200 notes across 20 workshops, confirming the collapsed All sessions default, 80-note pages, 40-signal detail, final-page search, session resets, and light/dark layouts. The layout was checked at 140% zoom without page overflow, and rendered scripts passed syntax checks.
 - Tray/audio changes passed all 149 Python tests and three new JavaScript recorder-control tests. Tests use synthetic audio, mocked transcription, and disposable vaults: idle/recording icon transitions, tooltips, menu enablement, concurrent Stop requests, saving audio before transcription, retained audio after failure, unique filenames, downloadable WAV bytes, and linked transcript notes. Existing desktop-window tests also verify downloads are enabled. A local preview passed a complete start/stop flow in the browser, transcription progress, separate saved links, note navigation, and rendered-script syntax checks without browser errors. Native Windows tray clicks and the native download dialog still need manual testing after rebuilding.
 - Real meeting capture, multi-gigabyte recordings, speech-model accuracy, live cloud-model responses, and a rebuilt Windows installer were not exercised. The print view was inspected; an actual PDF file was not generated during these checks.
+
+## September 24–26: recording, retained sources, and skate progress
+
+- Spotter Live answer handling rejects schema-shaped output; **Read replies aloud** can be disabled for text-only chat. Enter sends and Alt+Enter inserts a newline on both Spotter screens.
+- The live workspace survives navigation to notes and other app screens. The regular Back control and recording-status link replace the redundant return banner.
+- New recordings default to Unassigned. The desktop tray can start computer audio plus microphone in Unassigned and stop/save through the shared recorder. Concurrent starts are blocked.
+- Reviewed cleanup preserves the entire original before replacing working text. Save Memory Object links both versions. Original notes & transcripts opens paged, read-only sources; repeated cleanup retains prior originals. MCP adds get_memory_original and pagination for long note bodies, governed by the parent note.
+- Summary prompts ask for connected, work-focused prose. Hashtag markers remain unchanged; casual conversation is excluded from summaries and signals when recognized.
+- Action-item filenames tolerate long titles; save failures retain form values. Trash tolerates malformed manifests.
+- OneNote instructions explain DOCX page/section exports, folder grouping, heading-based splitting, and text-only limitations. Unsupported exports are reported explicitly.
+- Stats includes eight illustrated level badges and five milestones. Harborlight demos earn no XP or milestone credit. Token estimates reflect current active notes and an illustrative excerpt scenario, not measured cumulative savings.
+- Sessions has compact hover/focus/tap help for Review Connections. About permanently credits founding testers Brian Khorshad and Joe Wise.
+- README and About recognize SKATE as an Orion Global Hackathon 2026 winner on Devpost. The README includes a generated trophy/winner banner; the badge artwork is also generated and stored locally in the repository.
+
+### Publishing this update
+
+Run the Python and JavaScript checks before pushing. The maintainer's ignored Push SKATE to GitHub.bat stages source and artwork, commits, and pushes main. It blocks preserved original attachments and refuses to rename other branches. It does not build or publish installers. Build Installer.bat includes the new templates, static badge assets, and original-source module in the desktop/MCP bundles.
+
+Installed applications and MCP executables need rebuilding/restarting. Automated recorder tests use synthetic capture; physical Windows tray/device recording and installer upgrade checks remain necessary. Cloud summary quality depends on the selected provider and has not been established by the offline regression tests.

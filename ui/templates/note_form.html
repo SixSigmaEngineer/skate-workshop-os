@@ -161,7 +161,8 @@ contradicts | harborlight-service-access-2026/2026-07-15-hl-shadow-resource-list
     <input type="file" id="attachInput" multiple hidden>
     <span id="attachStatus" class="muted"></span>
   </div>
-  <label>Markdown<textarea name="body" id="body" rows="22" placeholder="# Title
+  {% include "_note_originals.html" %}
+  <label>Working notes (Markdown)<textarea name="body" id="body" rows="22" placeholder="# Title
 
 ## Meeting notes
 
@@ -187,7 +188,7 @@ Just start typing — the quick-capture buttons above insert markers wherever yo
     <p id="cleanupReviewStatus" class="muted" role="status"></p>
     <label>Proposed notes<textarea id="cleanupText" rows="14"></textarea></label>
     <details><summary>Excluded from this summary</summary><div id="cleanupExclusions" class="cleanup-exclusions"></div></details>
-    <p class="field-help">Applying saves the original note as a text attachment before replacing the text. Save the note when your review is complete.</p>
+    <p class="field-help">Applying keeps an unedited original you can read above the working notes. Save the note to link both versions for your connected agents.</p>
     <div class="toolbar"><button type="button" class="button primary" id="applyCleanup">Use reviewed notes</button><button type="button" class="button" id="cancelCleanup">Keep original</button></div>
   </section>
   <div id="statusLine" class="muted"></div>
@@ -671,6 +672,7 @@ function attachInsertAtCursor(snippet) {
   const cursor = (before + pad + snippet + "\n").length;
   body.setSelectionRange(cursor, cursor);
   body.focus();
+  saveDraft();
 }
 
 function attachFileName(file) {
@@ -783,5 +785,6 @@ attachInput.addEventListener("change", () => {
   attachInput.value = "";
 });
 </script>
-<script src="/static/note-cleanup.js?v=20260913-progress"></script>
+<script src="/static/note-cleanup.js?v=20260924-originals"></script>
+<script src="/static/note-originals.js?v=1"></script>
 {% endblock %}

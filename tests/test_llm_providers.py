@@ -201,6 +201,7 @@ class SkaterLevelTests(unittest.TestCase):
     class _E:
         def __init__(self, session_key="s1", entry_type="note", lineup_status=""):
             self.session_key = session_key
+            self.session = '' if session_key == 'unassigned' else session_key
             self.entry_type = entry_type
             self.lineup_status = lineup_status
 
@@ -229,6 +230,14 @@ class SkaterLevelTests(unittest.TestCase):
         self.assertEqual(progress["name"], "900 Legend")
         self.assertIsNone(progress["next_name"])
         self.assertEqual(progress["percent"], 100)
+
+    def test_demo_sessions_and_unassigned_do_not_earn_session_credit(self):
+        entries = [self._E('harborlight-service-access-2026', 'action', 'landed'),
+                   self._E('harborlight-volunteer-readiness-2026'), self._E('unassigned')]
+        progress = skate_app._skater_progress(entries)
+        self.assertEqual(progress['xp'], 1)
+        self.assertEqual(progress['landed'], 0)
+        self.assertEqual(progress['sessions'], 0)
 
 
 if __name__ == "__main__":
