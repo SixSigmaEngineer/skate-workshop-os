@@ -22,11 +22,11 @@
 </p>
 
 <p align="center">
-  <a href="https://orionhackathon.devpost.com/"><img src="branding-images/Orion-Hackathon-Winner.png" alt="SKATE — Orion Global Hackathon 2026 Winner, on Devpost" width="800"></a>
+  <a href="https://orionhackathon.com/"><img src="branding-images/Orion-Hackathon-Winner.png" alt="SKATE — Productivity &amp; Enterprise Solutions winner, Orion Global Hackathon 2026" width="800"></a>
 </p>
 
 <p align="center">
-  <strong>🏆 Hackathon Winner — <a href="https://orionhackathon.devpost.com/">Orion Global Hackathon 2026 on Devpost</a></strong>
+  <strong>🏆 Productivity &amp; Enterprise Solutions Winner — <a href="https://orionhackathon.com/">Orion Global Hackathon 2026 on Devpost</a></strong>
 </p>
 
 > *You can't vibe code personality.* SKATE has attitude: skateboard themes, Spotter, The GRIND, and actions you land. Built for the energy of a real workshop, with human judgment at the center.
@@ -35,11 +35,13 @@
 
 ## Hackathon winner
 
+SKATE was one of several winning apps in the [Orion Global Hackathon 2026](https://orionhackathon.com/), earning recognition as a winner in **Productivity & Enterprise Solutions**.
+
 | | |
 |---|---|
-| **Event** | [Orion Global Hackathon 2026](https://orionhackathon.devpost.com/) — Where Operations Research Meets Innovation |
+| **Event** | [Orion Global Hackathon 2026](https://orionhackathon.com/) — Where Operations Research Meets Innovation |
 | **Category** | **Productivity & Enterprise Solutions** |
-| **Recognition** | **Hackathon Winner** |
+| **Recognition** | **Winner — Productivity & Enterprise Solutions** |
 | **Current source** | v1.2.0 — September workshop updates; testing continues |
 
 ---

@@ -128,7 +128,7 @@ Stopping now saves a permanent WAV in the chosen session's attachments before tr
 - OneNote instructions explain DOCX page/section exports, folder grouping, heading-based splitting, and text-only limitations. Unsupported exports are reported explicitly.
 - Stats includes eight illustrated level badges and five milestones. Harborlight demos earn no XP or milestone credit. Token estimates reflect current active notes and an illustrative excerpt scenario, not measured cumulative savings.
 - Sessions has compact hover/focus/tap help for Review Connections. About permanently credits founding testers Brian Khorshad and Joe Wise.
-- README and About recognize SKATE as an Orion Global Hackathon 2026 winner on Devpost. The README includes a generated trophy/winner banner; the badge artwork is also generated and stored locally in the repository.
+- README and About recognize SKATE as one of several winning apps in Orion Global Hackathon 2026, winning in Productivity & Enterprise Solutions. The README includes a generated trophy/winner banner; the badge artwork is also generated and stored locally in the repository.
 
 ### Publishing this update
 
